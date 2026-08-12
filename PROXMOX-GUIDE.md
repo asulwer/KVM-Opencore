@@ -303,13 +303,18 @@ the first.
 
 ### 7b. Convert the CD-ROM lines to disks
 
+Drives are referenced as **`STORAGE:iso/FILENAME`**. These examples use `local`, the stock directory
+storage whose ISO folder is `/var/lib/vz/template/iso/`. If your images live on a different storage,
+substitute its name — `pvesm status --content iso` lists the ones that can hold ISOs, and a wrong
+name here fails with *"storage 'x' does not exist"*.
+
 **[changed]** The article says to *replace* `media=cdrom` with `cache=unsafe`. That is only half
 right, and on Proxmox **8.4 and newer it makes the VM refuse to start.** You must set
 `media=disk` **explicitly** and add `cache=unsafe`:
 
 ```
-ide0: isos:iso/Sequoia-recovery.img,media=disk,cache=unsafe,size=3G
-ide2: isos:iso/OpenCore-master.iso,media=disk,cache=unsafe,size=150M
+ide0: local:iso/Sequoia-recovery.img,media=disk,cache=unsafe,size=3G
+ide2: local:iso/OpenCore-master.img,media=disk,cache=unsafe,size=150M
 ```
 
 If you delete `media=cdrom` and leave it at that — exactly what the article tells you to do — you get:
@@ -351,8 +356,8 @@ boot: order=ide2
 cores: 4
 cpu: Haswell-noTSX
 efidisk0: local-lvm:vm-171-disk-1,efitype=4m,size=1M
-ide0: isos:iso/Sequoia-recovery.img,media=disk,cache=unsafe,size=3G
-ide2: isos:iso/OpenCore-master.iso,media=disk,cache=unsafe,size=150M
+ide0: local:iso/Sequoia-recovery.img,media=disk,cache=unsafe,size=3G
+ide2: local:iso/OpenCore-master.img,media=disk,cache=unsafe,size=150M
 machine: pc-q35-10.0
 memory: 4096
 name: macos-sequoia
