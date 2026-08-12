@@ -1,17 +1,86 @@
-# KVM-Opencore
+# KVM-OpenCore
 
-This is a fork of [Leoyzen's OpenCore image](https://github.com/leoyzen/KVM-Opencore) for QEMU/KVM, 
-which I've extended to add a build system for automatically buliding all of the required files from 
-sourcecode, and to keep up with the latest OpenCore changes.
+An OpenCore bootloader image for running macOS as a QEMU/KVM guest, targeted at **Proxmox VE 9**.
 
-It is currently tested to boot macOS Catalina, Big Sur, and Monterey, but will likely also boot older 
-versions of macOS.
+This is a fork of [thenickdude/KVM-Opencore](https://github.com/thenickdude/KVM-Opencore), which is
+itself a fork of [Leoyzen's OpenCore image](https://github.com/leoyzen/KVM-Opencore). All credit for
+the original work and its build system goes to them; this fork exists because upstream has been
+quiet since early 2024 and the config needed to move on.
 
-Although the images offered here should work on all QEMU/KVM distributions, I specifically build
-and test these for my Proxmox Hackintosh guide here:
+## This fork is maintained independently
 
-https://www.nicksherlock.com/2021/10/installing-macos-12-monterey-on-proxmox-7/
+**Changes here are not sent upstream, and this repo is not a staging area for pull requests.**
+Upstream is tracked as the `origin` remote so its fixes can be pulled in, but the two histories are
+expected to diverge.
 
-Note that although the images in the Releases have filenames like OpenCore-v15.iso, these aren't 
-real ISOs, but rather raw hard disk images, and need to be booted as such. (They're just using .iso
-extensions so they'll appear in Proxmox's disk image picker).
+What differs from upstream today:
+
+| Change | Why |
+|---|---|
+| Merged [PR #84](https://github.com/thenickdude/KVM-Opencore/pull/84) | OpenCore **1.0.5**, SMBIOS `iMac20,1`, `ScanPolicy 0`, and the two `hv_vmm_present` kernel patches that make Apple Services work on **Sequoia and Tahoe**. Open upstream since October 2025 |
+| `Misc/Boot/Timeout=5`, `Misc/Security/AllowSetDefault=true` | Upstream ships `0`/`false`, so the picker waits forever and Ctrl+Enter can't set a default — the VM never autoboots. Requested in upstream [issue #80](https://github.com/thenickdude/KVM-Opencore/issues/80) |
+| [`PROXMOX-GUIDE.md`](PROXMOX-GUIDE.md) | Full install guide for Proxmox 9, including two changes that stop the VM booting on current Proxmox (see below) |
+| [`build-image-nomac.sh`](build-image-nomac.sh) | Builds the image **without a Mac**. Upstream's Makefile needs `hdiutil` and `xcodebuild` |
+| `.gitattributes`, `.gitignore` additions | Force LF on shell scripts; ignore the build script's output |
+
+Upstream's newest tagged release is **v21 (March 2024)** — it predates Sequoia and does *not* contain
+the kernel patches above. Build from this repo's master instead.
+
+## Quick start
+
+Build the image on any Linux box — the Proxmox host is the obvious choice, since that's where it has
+to end up:
+
+```bash
+apt install -y curl unzip gdisk mtools git && git clone https://github.com/asulwer/KVM-Opencore.git && cd KVM-Opencore
+```
+
+```bash
+./build-image-nomac.sh && cp OpenCore-master.img /var/lib/vz/template/iso/
+```
+
+Then follow [`PROXMOX-GUIDE.md`](PROXMOX-GUIDE.md) to create the VM.
+
+> The resulting `.img`/`.iso` is **not a real ISO** — it's a raw GPT hard-disk image. The `.iso`
+> extension only exists so Proxmox's disk picker will list it, which is why the guide attaches it
+> with `media=disk` rather than as a CD-ROM.
+
+## Two things that break on current Proxmox
+
+Both stop the VM from starting, and both are wrong in guides written for Proxmox 7:
+
+1. **`Bus 'ehci.0' not found`** — QEMU 10 (Proxmox 9) removed that USB bus. Use
+   `-device qemu-xhci -device usb-kbd -device usb-tablet` instead of
+   `-device usb-kbd,bus=ehci.0,port=2`.
+2. **`explicit media parameter is required for iso images`** — since Proxmox 8.4, deleting
+   `media=cdrom` is not enough; `media=disk` must be set *explicitly*. The drive schema does default
+   `media` to `disk`, but an earlier check in `QemuServer.pm` rejects an undefined `media` for
+   ISO-type volumes before that default applies.
+
+Both are covered in detail in the guide.
+
+## Building
+
+**`build-image-nomac.sh` (no Mac required).** Every submodule pinned at master is an upstream release
+tag, and Acidanthera publishes prebuilt binaries for each, so nothing needs compiling. The script
+downloads those exact versions — OpenCore 1.0.5, Lilu 1.7.1, WhateverGreen 1.7.0, AppleALC 1.9.5,
+VirtualSMC 1.3.7, BrcmPatchRAM 2.7.1, CryptexFixup 1.0.5 — assembles the same EFI tree, and writes a
+GPT/FAT32 image with `mtools`. No root, no loop devices.
+
+**`make dist` (Mac required).** Upstream's build system, which compiles every kext from source with
+`xcodebuild` and packages with `hdiutil`. Needs `git submodule update --init` first. Use this only if
+you've modified kext source or want to verify the binaries yourself.
+
+> The `src/` directories are empty until you run `git submodule update --init`. That's expected, and
+> `build-image-nomac.sh` doesn't need them.
+
+## Rolling back
+
+[Section 11 of the guide](PROXMOX-GUIDE.md) covers everything this touches on a Proxmox host and how
+to undo it. In short: almost all of it is VM-scoped and disappears with `qm destroy`. The base guide
+makes exactly one host-global change (`/etc/modprobe.d/kvm.conf`), and only GPU passthrough can cost
+you access to the host.
+
+## Licence
+
+GPL-3.0, inherited from upstream. See [LICENSE](LICENSE).
