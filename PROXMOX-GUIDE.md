@@ -100,6 +100,12 @@ apt install -y curl unzip gdisk mtools git && git clone https://github.com/asulw
 ./build-image-nomac.sh && cp OpenCore-master.img /var/lib/vz/template/iso/
 ```
 
+> **The `src/` folders are empty — that's normal.** They're git submodules (Lilu, OpenCorePkg,
+> WhateverGreen, …) and a plain `git clone` leaves them as empty mount points; `git submodule status`
+> shows each with a `-` prefix meaning "not checked out". **`build-image-nomac.sh` never touches
+> them** — it downloads prebuilt release binaries instead, which is precisely why it doesn't need a
+> Mac. Only the Makefile (Option C) needs them, via `git submodule update --init`.
+
 No root or loop devices needed — it writes the FAT32 partition with `mtools`. Versions it pulls:
 OpenCore 1.0.5, Lilu 1.7.1, WhateverGreen 1.7.0, AppleALC 1.9.5, VirtualSMC 1.3.7, BrcmPatchRAM
 2.7.1, CryptexFixup 1.0.5. Bump the variables at the top of the script if you bump a submodule.
@@ -189,6 +195,10 @@ Make it survive reboots:
 ```bash
 echo "options kvm ignore_msrs=Y" >> /etc/modprobe.d/kvm.conf && update-initramfs -k all -u
 ```
+
+This is the **only host-global change** the base guide makes, and it applies to every guest on the
+host, not just macOS. It's a single file plus an initramfs rebuild — see **§11** for exactly what it
+does and how to back it out. Note the `>>`: run it twice and you get duplicate lines.
 
 ---
 
@@ -515,6 +525,125 @@ in Unigine Valley on Monterey. The same reader found Ventura hung at PCI enumera
 **[from comments]** NVMe passthrough is hit-and-miss — a WD SN750 1 TB was invisible to Disk Utility
 while an SN750 SE 512 GB and a Samsung 970 Pro worked with no config changes. Emulated fallback:
 `virtio0: file=/dev/nvme1n1` (slower).
+
+---
+
+## 11. Backing out — what this touches on the host, and how to undo it
+
+Almost everything here is **VM-scoped** and disappears when you delete the VM. Only two changes are
+host-global, and only one of those can leave the host unbootable. Nothing in this guide modifies your
+existing VMs, your storage config, your network config, or the Proxmox cluster.
+
+| What | Scope | Reversible? | Reboot to undo? |
+|---|---|---|---|
+| The VM, its disks, its EFI disk | VM only | Yes — `qm destroy` | No |
+| Image files in `/var/lib/vz/template/iso/` | Files | Yes — `rm` | No |
+| `args:` line, `media=disk`, machine pinning | VM only | Yes — edit or delete the VM | No |
+| `echo 1 > /sys/module/kvm/parameters/ignore_msrs` | **Host-global**, runtime only | Self-reverting | Yes — gone on reboot |
+| `/etc/modprobe.d/kvm.conf` + `update-initramfs` | **Host-global**, persistent | Yes — delete file, rebuild initramfs | Yes |
+| Packages (`mtools`, `gdisk`, `kpartx`, …) | Host | Yes, but see the warning below | No |
+| `losetup` / `kpartx` mappings | Host, runtime | Yes — detach them | No |
+| **GPU passthrough: GRUB cmdline, vfio binding, blacklists** | **Host-global** | Yes, **but this is the dangerous one** | Yes |
+
+### Before you start: the two-minute insurance policy
+
+```bash
+mkdir -p /root/macos-vm-backup && cp -a /etc/default/grub /etc/modprobe.d /root/macos-vm-backup/
+```
+
+And record which packages were genuinely new, so cleanup doesn't guess later:
+
+```bash
+apt-mark showmanual | sort > /root/macos-vm-backup/pkgs-before.txt
+```
+
+### Full teardown
+
+**1. Remove the VM and its disks.**
+
+```bash
+qm stop VMID; qm destroy VMID --purge --destroy-unreferenced-disks 1
+```
+
+`--purge` also strips it from backup jobs, HA, and replication. Confirm the disks are gone with
+`pvesm list local-lvm | grep VMID`.
+
+**2. Delete the images.**
+
+```bash
+rm -f /var/lib/vz/template/iso/OpenCore-master.img /var/lib/vz/template/iso/*-recovery.img
+```
+
+**3. Undo the KVM module option.** This is the one host-global change the base guide makes:
+
+```bash
+rm -f /etc/modprobe.d/kvm.conf && update-initramfs -k all -u
+```
+
+It takes effect on the next reboot; until then the running kernel keeps `ignore_msrs=Y`. Verify
+afterwards with `cat /sys/module/kvm/parameters/ignore_msrs` — `N` means it's off.
+
+> ⚠️ The guide's install command uses `>>` (append). Running it more than once silently stacks
+> duplicate `options kvm ignore_msrs=Y` lines. Check with `cat /etc/modprobe.d/kvm.conf` before
+> assuming one removal did it — and if you had a `kvm.conf` there for other reasons, edit the file
+> instead of deleting it.
+
+**What `ignore_msrs=Y` actually does while it's on:** KVM silently ignores guest reads/writes of
+model-specific registers it doesn't emulate, instead of injecting a #GP fault. It applies to every
+guest on the host, not just macOS. In practice other guests don't notice; the realistic side effect
+is `dmesg` filling with *"ignored rdmsr"* lines, which you can quiet with
+`options kvm report_ignored_msrs=N` if it bothers you.
+
+**4. Release any stale loop or device-mapper mappings** left behind by the §9 config.plist edits —
+these survive until reboot and can hold a disk busy:
+
+```bash
+losetup -a
+```
+
+```bash
+losetup --detach /dev/loopN && kpartx -dv /dev/pve/vm-VMID-disk-0
+```
+
+**5. Packages — leave them alone unless you're sure.**
+
+⚠️ **Do not blanket-remove the packages from §2/§3.** `qemu-utils` in particular is part of the
+normal Proxmox toolchain, and purging it can break your host. `python3` and `git` are similarly
+load-bearing for other things. Only remove what was genuinely new on *your* system:
+
+```bash
+comm -13 /root/macos-vm-backup/pkgs-before.txt <(apt-mark showmanual | sort)
+```
+
+`mtools`, `gdisk`, and `kpartx` are self-contained and safe to remove if they show up there. Honestly,
+the disk cost is a rounding error — leaving all of them installed is the lower-risk choice.
+
+### The dangerous part: GPU passthrough
+
+Everything above is low-stakes. The GPU passthrough steps are not, and they're the only place in this
+guide that can cost you access to the host:
+
+- **A bad `/etc/default/grub` edit can make Proxmox unbootable.** Always `update-grub` and read its
+  output before rebooting. If the host won't boot, hold Shift at power-on for the GRUB menu, press
+  `e`, remove the offending kernel arguments, and boot that entry once — then fix the file properly.
+- **Binding your only GPU to `vfio-pci` kills the host console.** Have SSH working and verified from
+  another machine *before* you reboot, or you'll be plugging in a keyboard and monitor to a machine
+  that no longer outputs video.
+- Undo is: restore `/root/macos-vm-backup/grub`, remove any vfio/blacklist files you added under
+  `/etc/modprobe.d/`, then `update-grub && update-initramfs -k all -u && reboot`.
+
+Do GPU passthrough as a **separate change, after** the VM works with emulated graphics. If you
+combine the two and it breaks, you won't know which half caused it.
+
+### Reverting the repo side
+
+Nothing here touches Proxmox. To drop the local config change and go back to stock upstream:
+
+```bash
+git fetch origin && git diff origin/master -- EFI/OC/config.plist
+```
+
+Then rebuild the image and re-copy it to the host.
 
 ---
 
