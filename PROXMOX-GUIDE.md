@@ -318,33 +318,74 @@ ide0: local:iso/Sequoia-recovery.img,media=disk,cache=unsafe,size=3G
 ide2: local:iso/OpenCore-master.img,media=disk,cache=unsafe,size=150M
 ```
 
-If you delete `media=cdrom` and leave it at that — exactly what the article tells you to do — you get:
+### You must edit the `.conf` file by hand — `qm set` and the web UI cannot do this
+
+This is not a stylistic preference. Proxmox has **two separate guards** on ISO-storage volumes, and
+they contradict each other:
+
+| Layer | Source | Rule |
+|---|---|---|
+| API — `qm set`, `pvesh`, web UI | `src/PVE/API2/Qemu.pm` | Requires **`media=cdrom` specifically**; `media=disk` is rejected |
+| VM start | `src/PVE/QemuServer.pm`, `Blockdev.pm` | Requires only that **`media` be defined**; `media=disk` is accepted |
+
+Try it through the API and you get a parameter-verification failure:
 
 ```
-ide0: explicit media parameter is required for iso images
+ide0: explicit 'media=cdrom' is required for iso images
 ```
 
-**Why**, since deleting the parameter *looks* like it should fall back to a disk: the drive schema
-does default `media` to `disk`, but Proxmox added a separate hard check that fires earlier. In
-`QemuServer.pm` (and `Blockdev.pm`) it reads:
+…from this check, which demands `cdrom` and nothing else:
+
+```perl
+raise_param_exc({ $opt => "explicit 'media=cdrom' is required for iso images" })
+    if $vtype eq 'iso' && !(defined($drive->{media}) && $drive->{media} eq 'cdrom');
+```
+
+The VM-start path is more permissive — it only objects to `media` being absent:
 
 ```perl
 die "$drive_id: explicit media parameter is required for iso images\n"
     if !defined($drive->{media}) && defined($vtype) && $vtype eq 'iso';
 ```
 
-Any volume living in an ISO-content storage (`local:iso/…`) has `vtype eq 'iso'`, so an **undefined**
-`media` is rejected outright — the schema default never gets a chance to apply. Undefined and
-`media=disk` are not equivalent here, which is precisely why the article's wording used to work and
-now doesn't. Proxmox even ships a regression test for it, `ide-no-media-error.conf`, whose passing
-line is `media=disk` and whose failing line has no `media` at all.
+So the API forbids precisely what the runtime accepts. Writing the lines straight into
+`/etc/pve/qemu-server/VMID.conf` skips API validation — pmxcfs is just a filesystem — and the start
+path then takes them:
 
-Skip this entirely and OpenCore never appears in the boot menu — both images are raw hard-disk
-images, not ISO 9660, so they have to be attached as disks rather than optical media.
+```bash
+cat >> /etc/pve/qemu-server/VMID.conf <<'EOF'
+ide0: local:iso/Sequoia-recovery.img,media=disk,cache=unsafe,size=3G
+ide2: local:iso/OpenCore-master.img,media=disk,cache=unsafe,size=150M
+EOF
+```
 
-⚠️ Setting `media=disk` on an ISO-storage volume is a **workaround, not a supported configuration** —
-Proxmox staff have questioned it in the forum thread below. It works today; treat it as something
-that could break again on a future upgrade.
+Set the boot order separately, since `boot:` already exists and appending a duplicate key would break
+the file — and because `qm set` only validates the option being changed, this succeeds even with the
+`media=disk` drives present:
+
+```bash
+qm set VMID --boot order=ide2
+```
+
+**The article's advice fails differently.** If you delete `media=cdrom` and add nothing, the config
+saves fine but the VM won't start:
+
+```
+ide0: explicit media parameter is required for iso images
+```
+
+The drive schema *does* declare `default => 'disk'`, but the check above fires before the default is
+applied, so undefined and `media=disk` are not equivalent. Proxmox ships a regression test for this,
+`src/test/cfg2cmd/ide-no-media-error.conf`, whose passing line is `media=disk` and whose failing line
+has no `media` at all.
+
+Skip §7b entirely and OpenCore never appears in the boot menu — both images are raw hard-disk images,
+not ISO 9660, so they have to be attached as disks rather than optical media.
+
+⚠️ That the API refuses to express this config is a strong hint it is **unsupported**, and Proxmox
+staff have said as much in the forum thread below. It works today. Treat it as something that can
+break on a future upgrade, and avoid touching those two drives in the web UI — the GUI will refuse to
+save them.
 
 ### 7c. Reference config (Proxmox 9)
 
@@ -487,7 +528,8 @@ Consolidated from all six comment pages. Left column is the symptom you'll actua
 | Symptom | Fix |
 |---|---|
 | **VM won't start: `Bus 'ehci.0' not found`** | **[PVE 9]** QEMU 10 dropped that bus. Replace `-device usb-kbd,bus=ehci.0,port=2` with `-device qemu-xhci -device usb-kbd -device usb-tablet` (§7a) |
-| **VM won't start: `ide0: explicit media parameter is required for iso images`** | **[PVE 8.4+]** You followed the article and deleted `media=cdrom` outright. Set `media=disk` explicitly — see §7b for why the schema default doesn't save you |
+| **VM won't start: `ide0: explicit media parameter is required for iso images`** | **[PVE 8.4+]** You followed the article and deleted `media=cdrom` outright. Set `media=disk` explicitly — see §7b |
+| **`qm set` fails: `explicit 'media=cdrom' is required for iso images`** | Expected — the API refuses `media=disk` on ISO storage. Write the `ide` lines directly into `/etc/pve/qemu-server/VMID.conf`, then set the boot order with `qm set` (§7b) |
 | OpenCore/installer still not offered as a boot entry | Both IDE lines need **`media=disk,cache=unsafe`**, not one or the other (§7b) |
 | `media=disk` rejected on a future Proxmox upgrade | It's an unsupported workaround. Fallback: import the image as a real VM disk — `qm importdisk VMID /var/lib/vz/template/iso/Sequoia-recovery.img local-lvm` — then attach it and set the boot order. Sidesteps ISO-storage handling entirely |
 | Only boots with **one core** on PVE 9 | Drop `-cpu host` for an explicit model such as `Haswell-noTSX` or `Cascadelake-Server` (§7a, issue #37) |
@@ -671,7 +713,7 @@ Then rebuild the image and re-copy it to the host.
 - [Dortania OpenCore Post-Install](https://dortania.github.io/OpenCore-Post-Install/)
 - [Mac OS 15 Sequoia on Proxmox 9.0.3](https://forum.proxmox.com/threads/mac-os-15-sequoia-on-proxmox-9-0-3.169742/) — Proxmox forum thread; source of the working PVE 9 `args` line
 - [8.4: "Fake" IDE drives from ISO images no longer supported?](https://forum.proxmox.com/threads/8-4-fake-ide-drives-from-iso-images-no-longer-supported.164967/) — the `media=disk` change, including Proxmox staff's view that it's a workaround
-- [`proxmox/qemu-server`](https://github.com/proxmox/qemu-server) — `src/PVE/QemuServer.pm`, `src/PVE/QemuServer/Blockdev.pm` (the `explicit media parameter` check) and `src/test/cfg2cmd/ide-no-media-error.conf`
+- [`proxmox/qemu-server`](https://github.com/proxmox/qemu-server) — `src/PVE/API2/Qemu.pm` (the API-side `media=cdrom` requirement), `src/PVE/QemuServer.pm` and `src/PVE/QemuServer/Blockdev.pm` (the looser VM-start check), and `src/test/cfg2cmd/ide-no-media-error.conf`
 - [LongQT-sea/OpenCore-ISO](https://github.com/LongQT-sea/OpenCore-ISO) — actively maintained alternative OpenCore image covering Mac OS X 10.4 through macOS 26, with per-host-CPU guidance. Worth a look if this repo's image gives you trouble on PVE 9
 - Repo issues referenced: [#15](https://github.com/thenickdude/KVM-Opencore/issues/15),
   [#35](https://github.com/thenickdude/KVM-Opencore/issues/35),
