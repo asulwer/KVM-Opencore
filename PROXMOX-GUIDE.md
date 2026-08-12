@@ -89,10 +89,11 @@ from this repo. Every submodule pinned by master is an upstream *release tag*, a
 prebuilt binaries for each, so nothing has to be compiled — the script downloads those exact versions
 and assembles the identical EFI tree.
 
-Run it on the Proxmox host (or any Linux box), which is where the image needs to end up anyway:
+Run it on the Proxmox host (or any Linux box), which is where the image needs to end up anyway. Clone
+**this fork** — the script and the merged PR #84 config only exist here, not in thenickdude's repo:
 
 ```bash
-apt install -y curl unzip gdisk mtools git && git clone https://github.com/thenickdude/KVM-Opencore.git && cd KVM-Opencore
+apt install -y curl unzip gdisk mtools git && git clone https://github.com/asulwer/KVM-Opencore.git && cd KVM-Opencore
 ```
 
 ```bash
