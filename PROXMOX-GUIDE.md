@@ -429,6 +429,18 @@ qm set VMID --machine "$(kvm -machine help | grep -oE 'pc-q35-[0-9]+\.[0-9]+' | 
 
 1. Start the VM and open the console. At the OpenCore picker choose **macOS Base System** (or
    "Install macOS …" if you built a full installer).
+
+   ⚠️ **Do not let it autoboot the first entry.** Because `ScanPolicy=0` lists every volume, the
+   first entry is typically a bare **`EFI`** — the OpenCore image's own EFI partition — and booting
+   it goes nowhere, leaving a black screen that looks like a hang. A typical picker reads:
+   `EFI`, `Install macOS Sequoia`, `UEFI Shell`, `Reset NVRAM`, `Toggle SIP`.
+
+   Arrow down to the installer and press **Ctrl+Enter** rather than Enter: that boots it *and* makes
+   it the default, so the timeout stops selecting `EFI`. Ctrl+Enter only works because of the
+   `AllowSetDefault=true` change in §0 — on stock upstream config it does nothing.
+
+   To declutter the picker permanently, set `Misc/Boot/HideAuxiliary=true`, which hides the shell and
+   utility entries behind a Space keypress.
 2. In the installer, open **Disk Utility** first. Erase your 64 GB virtio disk as **APFS**, GUID
    partition map. Quit Disk Utility.
 3. Run the installer against that disk.
@@ -533,6 +545,8 @@ Consolidated from all six comment pages. Left column is the symptom you'll actua
 | OpenCore/installer still not offered as a boot entry | Both IDE lines need **`media=disk,cache=unsafe`**, not one or the other (§7b) |
 | `media=disk` rejected on a future Proxmox upgrade | It's an unsupported workaround. Fallback: import the image as a real VM disk — `qm importdisk VMID /var/lib/vz/template/iso/Sequoia-recovery.img local-lvm` — then attach it and set the boot order. Sidesteps ISO-storage handling entirely |
 | Only boots with **one core** on PVE 9 | Drop `-cpu host` for an explicit model such as `Haswell-noTSX` or `Cascadelake-Server` (§7a, issue #37) |
+| **Black screen right after the picker autoboots** | The first entry is a bare `EFI` volume, not your installer — `ScanPolicy=0` lists everything. Select the `Install macOS …` entry and press **Ctrl+Enter** to make it the default (§8) |
+| Timeout too short to catch the picker | `Misc/Boot/Timeout` in config.plist. §0 sets it to 5 s for unattended autoboot; raise it to 30 while debugging |
 | Boots to **UEFI shell**, no OpenCore picker | Delete the EFI disk, re-add with "pre-enroll keys" unticked. Failing that: F2 → Boot Maintenance → Boot Options → delete stale entries, add `EFI/OC/OpenCore.efi`, make it default |
 | `Bd5Dxe: failed to load Boot0003` | Same as above |
 | OpenCore entry missing / "cannot find QEMU DVD-ROM" | You skipped §7b — the IDE lines need `media=disk,cache=unsafe` |
