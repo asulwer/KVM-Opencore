@@ -841,7 +841,7 @@
                 <key>TakeoffDelay</key>
                 <integer>0</integer>
                 <key>Timeout</key>
-                <integer>0</integer>
+                <integer>5</integer>
             </dict>
             <key>Debug</key>
             <dict>
@@ -867,7 +867,7 @@
             <key>Security</key>
             <dict>
                 <key>AllowSetDefault</key>
-                <false/>
+                <true/>
                 <key>ApECID</key>
                 <integer>0</integer>
                 <key>AuthRestart</key>
