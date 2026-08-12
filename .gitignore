@@ -26,6 +26,13 @@ OpenCore.dmg*
 OpenCore.iso*
 OpenCoreEFIFolder.zip
 
+# Output of build-image-nomac.sh (RELEASE_VERSION defaults to "master")
+build-nomac/
+OpenCore-*.img
+OpenCore-*.dmg*
+OpenCore-*.iso*
+OpenCoreEFIFolder-*.zip
+
 # Prerequisites
 *.d
 
