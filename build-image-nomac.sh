@@ -55,9 +55,15 @@ rm -rf "$EFI"
 mkdir -p "$DL" "$EFI/BOOT" "$EFI/OC/Drivers" "$EFI/OC/Tools" "$EFI/OC/Kexts" "$EFI/OC/ACPI"
 
 fetch() { # url dest
-    [ -f "$2" ] && { info "cached $(basename "$2")"; return; }
+    # -s (not -f) so a zero-byte leftover from an interrupted run is not treated as cached.
+    [ -s "$2" ] && { info "cached $(basename "$2")"; return; }
     info "downloading $(basename "$2")"
-    curl -fsSL -o "$2" "$1"
+    # GitHub's release CDN throws transient 503s, so retry. Download to .part and only
+    # rename on success, otherwise a truncated file would be picked up as "cached" next run
+    # and fail later with a confusing unzip error.
+    curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 15 \
+        -o "$2.part" "$1" || die "download failed after retries: $1"
+    mv -f "$2.part" "$2"
 }
 
 unpack() { # name zipfile
