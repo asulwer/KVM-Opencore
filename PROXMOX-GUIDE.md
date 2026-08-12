@@ -15,8 +15,9 @@ corrected the article, or because **Proxmox 9 broke something**. Those spots are
 >
 > The article breaks in **two** places on modern Proxmox, and both stop the VM from starting at all:
 >
-> 1. **`Bus 'ehci.0' not found`** — QEMU 10 removed that USB bus, and the article's `args` line
->    contains `-device usb-kbd,bus=ehci.0,port=2`. Use the PVE 9 `args` line in **§7a**.
+> 1. **`Bus 'ehci.0' not found`** — QEMU 10 removed that USB bus and it is still gone in 11
+>    (Proxmox 9 ships 10 or 11 depending on point release), while the article's `args` line contains
+>    `-device usb-kbd,bus=ehci.0,port=2`. Use the PVE 9 `args` line in **§7a**.
 > 2. **`explicit media parameter is required for iso images`** — the article tells you to *delete*
 >    `media=cdrom`; since PVE 8.4 you must set **`media=disk`** explicitly instead. See **§7b**.
 >
@@ -358,7 +359,7 @@ cpu: Haswell-noTSX
 efidisk0: local-lvm:vm-171-disk-1,efitype=4m,size=1M
 ide0: local:iso/Sequoia-recovery.img,media=disk,cache=unsafe,size=3G
 ide2: local:iso/OpenCore-master.img,media=disk,cache=unsafe,size=150M
-machine: pc-q35-10.0
+machine: pc-q35-11.0
 memory: 4096
 name: macos-sequoia
 net0: virtio=...,bridge=vmbr0,firewall=1
@@ -367,10 +368,19 @@ virtio0: local-lvm:vm-171-disk-0,cache=unsafe,discard=on,size=64G
 vga: vmware
 ```
 
-**[PVE 9]** Note `machine: pc-q35-10.0` rather than bare `q35`. Pinning the machine version means a
-future Proxmox/QEMU upgrade won't silently change the virtual hardware underneath macOS — which
-macOS, unlike Linux or Windows guests, tends to react badly to. Set it to whatever `pc-q35-*` version
-your host currently offers.
+**[PVE 9]** Note the pinned `machine:` version rather than bare `q35`. Pinning means a future
+Proxmox/QEMU upgrade won't silently change the virtual hardware underneath macOS — which macOS,
+unlike Linux or Windows guests, tends to react badly to.
+
+**Don't copy a version number from this guide** — Proxmox 9 ships QEMU 10 or 11 depending on point
+release, and `q35` alone resolves to whatever the current default is. Read the newest your host
+actually offers and pin to that:
+
+```bash
+qm set VMID --machine "$(kvm -machine help | grep -oE 'pc-q35-[0-9]+\.[0-9]+' | sort -V | tail -1)"
+```
+
+`qm config VMID | grep meta` also shows the QEMU version the VM was created under.
 
 ---
 
