@@ -59,6 +59,48 @@ we merged from PR #84 do the same job at the kernel level. Adding both is redund
 
 ---
 
+## ⚠️ Pre-Haswell hosts: read before you start
+
+If your host CPU lacks **AVX2** — Intel Ivy Bridge or older, AMD pre-Excavator — you **cannot boot
+the installer for macOS Ventura, Sonoma, Sequoia or Tahoe.** Not a config problem; not fixable from
+OpenCore. Verified on a Xeon E5-2670 v2 with genuine, chunklist-verified Apple recovery media:
+
+```
+panic(cpu 0 caller 0x…): initproc failed to start -- exit reason namespace 2 subcode 0x4
+```
+
+preceded by:
+
+```
+shared_region: … [1(launchd)] check_np(…) vm_shared_region_start_address() failed
+AMFI: '/System/Library/dyld/dyld_shared_cache_x86_64' is adhoc signed.
+```
+
+Ventura and later dropped the non-AVX2 dyld shared caches, so `launchd` — pid 1 — dies before
+userspace exists. The kernel boots fine, which makes this look like a config fault. It isn't.
+
+**CryptexFixup does not fix this.** It forces the Rosetta cryptex into the system being *installed*;
+it cannot change the installer environment you are booting, whose dyld cache is already baked in.
+Injecting it is still correct for the installed OS — just don't expect it to get you past this.
+
+Check your host before spending an evening on it:
+
+```bash
+grep -o avx2 /proc/cpuinfo | head -1
+```
+
+Nothing printed means no AVX2. Your options:
+
+| Goal | Route |
+|---|---|
+| Simplest working VM | **Install Monterey** — the newest release whose installer boots natively on pre-Haswell |
+| You want Sequoia | Install Monterey first, then **upgrade in place** from within the running system, where CryptexFixup does apply. This is the documented Ivy Bridge path — the installer *app* works where installer *media* cannot |
+| Clean Sequoia media | Build an OCLP-patched installer, which needs an existing working macOS |
+
+Everything else in this guide applies unchanged; only your choice of macOS version does.
+
+---
+
 ## 1. Prerequisites
 
 - Proxmox 7, 8, or 9, with an Intel Nehalem-or-newer CPU, or a modern AMD CPU. **SSE 4.2 is the hard
@@ -558,6 +600,7 @@ Consolidated from all six comment pages. Left column is the symptom you'll actua
 | Boots to **UEFI shell**, no OpenCore picker | Delete the EFI disk, re-add with "pre-enroll keys" unticked. Failing that: F2 → Boot Maintenance → Boot Options → delete stale entries, add `EFI/OC/OpenCore.efi`, make it default |
 | `Bd5Dxe: failed to load Boot0003` | Same as above |
 | OpenCore entry missing / "cannot find QEMU DVD-ROM" | You skipped §7b — the IDE lines need `media=disk,cache=unsafe` |
+| **`initproc failed to start`, exit reason namespace 2** | Host CPU lacks AVX2 and you're booting Ventura+ installer media. See the pre-Haswell section above — install Monterey and upgrade in place |
 | **Stuck at Apple logo**, no progress bar | In order of likelihood: OSK not exactly 64 chars; core count not a power of two; CPU missing SSE 4.2; remove hugepages from the host kernel cmdline |
 | Boot loop with `AppleKeyStore operation failed` | Wrong OSK |
 | Kernel panic, `TSC warp between CPUs` | Known on Sandy Bridge-era hosts; see OSX-KVM issue #15. `CpuTscSync.kext` was reported to help, especially for wake-from-sleep panics |
