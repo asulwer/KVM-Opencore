@@ -131,8 +131,10 @@ Gunzip the `.iso.gz` and upload the result to `/var/lib/vz/template/iso` on the 
 >    should report `file format: raw`. If it says `dmg`, convert it:
 >    `qemu-img convert -O raw in.dmg out.img`. If `file yourfile` says *ISO 9660*, it will not boot
 >    here regardless of what you do in §7b — that path expects a hard-disk image.
-> 2. **Size.** A recovery image should be several GB; a full installer ~14 GB. Anything near 650 MB is
->    a truncated download, which is a recurring failure in the comments.
+> 2. **Provenance.** Prefer an image you fetched from Apple yourself (§3, chunklist-verified) over a
+>    prebuilt one. Third-party repacks may be patched for a different host CPU, and you will burn
+>    hours blaming your config for their image. Size is a weak signal — a genuine Sequoia recovery
+>    `BaseSystem.dmg` is ~843 MB, while a full installer is ~14 GB.
 > 3. **Version.** Our config covers Catalina 10.15.6 through Tahoe — the `iMac20,1` SMBIOS doesn't
 >    exist before 10.15.6, and the two `hv_vmm_present` patches are gated to `MinKernel 24.0.0`, so
 >    they sit inert on anything below Sequoia. Nothing to change either way.
@@ -157,14 +159,20 @@ Substitute `tahoe`, `sonoma`, `ventura`, or `monterey` as needed. Then convert t
 `BaseSystem.dmg` into a raw image:
 
 ```bash
-qemu-img convert -O raw com.apple.recovery.boot/BaseSystem.dmg /var/lib/vz/template/iso/Sequoia-recovery.img
+qemu-img convert -O raw /root/OSX-KVM/BaseSystem.dmg /var/lib/vz/template/iso/Sequoia-recovery.img
 ```
 
 **[from comments]** Two things readers hit repeatedly here:
 
-- A recovery image that comes out at ~650 MB is **truncated/wrong**. A healthy one is multiple GB.
-  Rebuild it, ideally on a different distro — one reader got a bad 623 MB image on Oracle Linux and a
-  good 3 GB one on Ubuntu.
+- The script writes `BaseSystem.dmg` into its **own directory**, not into `com.apple.recovery.boot/`
+  — read the `Saving … to ./BaseSystem.dmg` line in its output for the real path.
+- **Don't judge it by size alone.** `fetch-macOS-v2.py` verifies the download against Apple's
+  chunklist and prints `Image verification complete!` — trust that over any size heuristic. For
+  reference, Sequoia's recovery `BaseSystem.dmg` is ~843 MB compressed and expands when converted to
+  raw. The article's comments warn that ~650 MB means truncation, but that predates chunklist
+  verification and applies to Monterey-era images; a verified 843 MB Sequoia download is correct.
+- A **recovery** image downloads the OS from Apple during install, so the guest needs working DHCP
+  and internet. A **full installer** (~14 GB) carries the payload and doesn't.
 - The recovery installer downloads the OS at install time and needs working DHCP + internet in the
   guest. If you get `PKDownloadError error 8` or "An error occurred loading the update", use a **full
   installer** image instead of recovery (buildable only on a real Mac), or fix guest networking first
