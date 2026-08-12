@@ -584,7 +584,7 @@
                     <key>Mask</key>
                     <data>////////AAAAAP//</data>
                     <key>MaxKernel</key>
-                    <string>23.99.99</string>
+                    <string></string>
                     <key>MinKernel</key>
                     <string>20.4.0</string>
                     <key>Replace</key>
@@ -674,7 +674,7 @@
                     <key>Mask</key>
                     <data></data>
                     <key>MaxKernel</key>
-                    <string>23.99.99</string>
+                    <string></string>
                     <key>MinKernel</key>
                     <string>22.1.0</string>
                     <key>Replace</key>
