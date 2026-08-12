@@ -464,13 +464,13 @@
                     <key>BundlePath</key>
                     <string>CryptexFixup.kext</string>
                     <key>Comment</key>
-                    <string>V1.0.5 | Support for non-AVX2 CPUs in Ventura/Sonoma</string>
+                    <string>V1.0.5 | Support for non-AVX2 CPUs in Ventura and newer</string>
                     <key>Enabled</key>
                     <true/>
                     <key>ExecutablePath</key>
                     <string>Contents/MacOS/CryptexFixup</string>
                     <key>MaxKernel</key>
-                    <string>23.99.99</string>
+                    <string></string>
                     <key>MinKernel</key>
                     <string>22.1.0</string>
                     <key>PlistPath</key>
