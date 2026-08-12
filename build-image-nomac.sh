@@ -160,7 +160,8 @@ dd if="$PART_IMG" of="$OUT" bs=512 seek="$PART_START_SECTOR" conv=notrunc status
 info "done: $OUT"
 echo
 echo "Contents:"
-mdir -i "$PART_IMG" -/ ::/EFI | tail -n +2
+# Non-recursive: a full -/ listing is ~660 lines, almost all of it OcBinaryData Resources.
+mdir -i "$PART_IMG" ::/EFI/OC ::/EFI/OC/Kexts ::/EFI/OC/Drivers ::/EFI/OC/Tools ::/EFI/OC/ACPI || true
 echo
 echo "Next: copy it to the Proxmox ISO store, e.g."
 echo "  cp \"$OUT\" /var/lib/vz/template/iso/"
