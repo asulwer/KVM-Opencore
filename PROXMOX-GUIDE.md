@@ -122,8 +122,8 @@ Nothing printed means no AVX2. Your options:
 | Goal | Route |
 |---|---|
 | Simplest working VM | **Install Monterey** — the newest release whose installer boots natively on pre-Haswell |
-| You want Sequoia | Install Monterey first, then **upgrade in place** from within the running system, where CryptexFixup does apply. This is the documented Ivy Bridge path — the installer *app* works where installer *media* cannot |
-| Clean Sequoia media | Build an OCLP-patched installer, which needs an existing working macOS |
+| Newest usable macOS | **Install Monterey, then upgrade in place to Ventura or Sonoma.** The installer *app* works where installer *media* cannot, and CryptexFixup covers 22.1.0–23.99.99 |
+| macOS 15 / Sequoia or newer | **Not achievable on this hardware.** See the tested ceiling above — you need an AVX2-capable host |
 
 Everything else in this guide applies unchanged; only your choice of macOS version does.
 
