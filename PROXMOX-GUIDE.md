@@ -83,6 +83,34 @@ userspace exists. The kernel boots fine, which makes this look like a config fau
 it cannot change the installer environment you are booting, whose dyld cache is already baked in.
 Injecting it is still correct for the installed OS — just don't expect it to get you past this.
 
+### Tested ceiling for non-AVX2: Sonoma
+
+Sequoia can be *installed* by upgrading in place from Monterey — that part works, and the resulting
+system boots far enough to graft its cryptex. It then panics anyway:
+
+```
+apfs_log_op_with_proc: … grafting volume …x86_64SystemCryptex, requested by: launchd
+Library not loaded: /usr/lib/libSystem.B.dylib
+  Reason: tried '/System/Volumes/Preboot/Cryptexes/OS/usr/lib/libSystem.B.dylib' (no such file),
+          … (no such file, no dyld cache)
+panic(…): initproc failed to start -- exit reason namespace 6 subcode 0x1
+```
+
+macOS grafts the **stock Intel cryptex**, whose dyld cache is `x86_64h`. A pre-Haswell CPU cannot
+execute it, dyld rejects the cache, and since modern macOS ships no loose dylibs, `launchd` dies.
+
+This was reproduced on a Xeon E5-2670 v2 with CryptexFixup 1.0.5 **uncapped past its 23.99.99
+ceiling**, both the Penryn and broken-seal patches extended to Sequoia, and `-crypt_force_avx` set.
+The grafted cryptex name never changed — CryptexFixup simply does not engage on Darwin 24.
+
+**So the practical ceiling on a non-AVX2 host is Sonoma (14.x)**, which is what CryptexFixup, the
+broken-seal patch and this config were all written and tested against. Ventura and Sonoma sit inside
+every supported range; Sequoia sits outside all of them.
+
+If you need macOS 15 or newer — for example Xcode 16.4, which requires 15.4+ — you need an
+AVX2-capable host. Intel Haswell or newer, AMD Excavator/Ryzen or newer. No OpenCore configuration
+substitutes for it.
+
 Check your host before spending an evening on it:
 
 ```bash
