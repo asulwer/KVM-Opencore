@@ -646,6 +646,7 @@ Consolidated from all six comment pages. Left column is the symptom you'll actua
 | Recovery download fails (`PKDownloadError error 8`) | Guest needs DHCP + internet. Try a static IP, run dnsmasq on the Proxmox host, or switch the NIC to `vmxnet3` |
 | Won't wake from sleep | Disable sleep in Energy Saver. To wake manually: `qm monitor VMID` → `system_wakeup` → `quit` |
 | Wrong screen resolution | `UEFI/Output/Resolution` in config.plist |
+| **White desktop background on Sonoma+**, wallpaper flashes then disappears | Sonoma's wallpapers are videos and the VM has no video decode, so `WallpaperVideoExtension` logs *"0 frames enqueued"* and renders nothing. Cosmetic. Pick **Solid Color** or supply your own JPG/PNG — most "static" options are stills from the aerial videos and still use that extension |
 | Terrible video performance | Expected — there is no guest GPU acceleration. Use macOS **Screen Sharing** (VNC) rather than the Proxmox console; disable hardware acceleration in Chrome. Real fix is GPU passthrough |
 | Need verbose boot | Press (don't hold) **Cmd+V** at the OpenCore picker before Enter. For panics that reboot too fast, add `debug=0x100` to boot-args |
 | Need SIP off | Boot Recovery → `csrutil disable --no-internal` (our config already ships `csr-active-config 0x0803`) |
