@@ -1,27 +1,24 @@
 # Installing macOS on Proxmox with this OpenCore image
 
-Adapted from Nicholas Sherlock's guide, [Installing macOS 12 "Monterey" on Proxmox 7](https://www.nicksherlock.com/2021/10/installing-macos-12-monterey-on-proxmox-7/)
-(published 2021-10-26, last updated 2023-05-09), plus fixes collected from all six pages of reader
-comments on that article. Updated for the state of this repo after merging
-[PR #84](https://github.com/thenickdude/KVM-Opencore/pull/84) — OpenCore 1.0.5, macOS Sequoia (15)
-and Tahoe (26) support.
+A complete, self-contained guide to running macOS as a Proxmox VE guest using the OpenCore image in
+this repository. **You do not need to read anything else first.** Every command, value and
+explanation you need is here. The credits at the end list the sources this work draws on, for
+attribution and further reading rather than as prerequisites.
 
-The upstream article targets Monterey on Proxmox 7 and references OpenCore v15. Where this guide
-differs it is because our merged `config.plist` changed, because a reader comment or repo issue
-corrected the article, or because **Proxmox 9 broke something**. Those spots are marked **[changed]**,
-**[from comments]**, **[issue #N]**, and **[PVE 9]**.
+Written and tested against **Proxmox VE 9 / QEMU 11** with **OpenCore 1.0.5**, and verified on real
+hardware — see **macOS version support** below for exactly what was tested.
 
-> ### ⚠️ Proxmox 9 users read this first
+> ### ⚠️ Proxmox 8.4 and newer: two things that stop the VM from starting
 >
-> The article breaks in **two** places on modern Proxmox, and both stop the VM from starting at all:
+> Most macOS-on-Proxmox instructions circulating online predate both of these. If you cross-reference
+> anything else, these are where it will mislead you:
 >
-> 1. **`Bus 'ehci.0' not found`** — QEMU 10 removed that USB bus and it is still gone in 11
->    (Proxmox 9 ships 10 or 11 depending on point release), while the article's `args` line contains
->    `-device usb-kbd,bus=ehci.0,port=2`. Use the PVE 9 `args` line in **§7a**.
-> 2. **`explicit media parameter is required for iso images`** — the article tells you to *delete*
->    `media=cdrom`; since PVE 8.4 you must set **`media=disk`** explicitly instead. See **§7b**.
->
-> Everything else in this guide applies unchanged.
+> 1. **`Bus 'ehci.0' not found`** — QEMU 10 removed that USB bus and it is still gone in 11.
+>    Anything telling you to use `-device usb-kbd,bus=ehci.0,port=2` is out of date. Use the `args`
+>    line in **§7a**.
+> 2. **`explicit media parameter is required for iso images`** — since PVE 8.4 you must set
+>    **`media=disk`** explicitly on the image drives. Removing `media=cdrom` is not enough.
+>    See **§7b**.
 
 ---
 
@@ -201,7 +198,7 @@ Watch the grafted cryptex name on first boot — `arm64e` means it worked.
 - Proxmox 7, 8, or 9, with an Intel Nehalem-or-newer CPU, or a modern AMD CPU. **SSE 4.2 is the hard
   floor.** On Proxmox 9, see the warning above about the `args` line.
 - A real Mac (or an existing Hackintosh/macOS VM) to extract the OSK key from.
-- 64 GB+ of free storage for the VM disk. **32 GB is rejected by the installer** — this bites people constantly in the comments.
+- 64 GB+ of free storage for the VM disk. **32 GB is rejected by the installer.**
 - **No Mac is required** to build the OpenCore image or the recovery installer — both are done on
   Linux (§2, §3). The only steps that genuinely need macOS are extracting the OSK (§4) and building a
   *full* offline installer instead of a recovery image.
@@ -210,9 +207,8 @@ Watch the grafted cryptex name on first boot — `arm64e` means it worked.
 
 ## 2. Get the OpenCore image
 
-**[changed]** The article says to download `OpenCore.iso.gz` from the releases page. The newest release
-there is **v21 (March 2024)** and predates Sequoia — it does **not** contain the `hv_vmm_present`
-patches or OpenCore 1.0.5. Use one of these instead:
+**Do not use the tagged releases.** The newest is **v21 (March 2024)**, which predates Sequoia and
+contains neither the `hv_vmm_present` patches nor OpenCore 1.0.5. Use one of these instead:
 
 **Option A — prebuilt artifact from PR #84** (fastest; attached by the PR author):
 
@@ -278,9 +274,8 @@ Gunzip the `.iso.gz` and upload the result to `/var/lib/vz/template/iso` on the 
 >
 > Then drop the image in `/var/lib/vz/template/iso/` and continue at §4.
 
-**[changed]** The article points at `thenickdude/OSX-KVM`'s `scripts/monterey` Makefile. That fork
-only goes up to Ventura. For Sequoia and Tahoe, use **kholia/OSX-KVM**, whose `fetch-macOS-v2.py`
-supports `sequoia` and `tahoe` shortnames.
+Use **kholia/OSX-KVM**'s `fetch-macOS-v2.py`, which downloads recovery images directly from Apple
+and supports every shortname from `high-sierra` through `sequoia` and `tahoe`.
 
 On the Proxmox host (or any Linux box with `python3` and `qemu-utils`):
 
@@ -299,15 +294,15 @@ Substitute `tahoe`, `sonoma`, `ventura`, or `monterey` as needed. Then convert t
 qemu-img convert -O raw /root/OSX-KVM/BaseSystem.dmg /var/lib/vz/template/iso/Sequoia-recovery.img
 ```
 
-**[from comments]** Two things readers hit repeatedly here:
+Two common pitfalls:
 
 - The script writes `BaseSystem.dmg` into its **own directory**, not into `com.apple.recovery.boot/`
   — read the `Saving … to ./BaseSystem.dmg` line in its output for the real path.
 - **Don't judge it by size alone.** `fetch-macOS-v2.py` verifies the download against Apple's
   chunklist and prints `Image verification complete!` — trust that over any size heuristic. For
   reference, Sequoia's recovery `BaseSystem.dmg` is ~843 MB compressed and expands when converted to
-  raw. The article's comments warn that ~650 MB means truncation, but that predates chunklist
-  verification and applies to Monterey-era images; a verified 843 MB Sequoia download is correct.
+  raw. Older advice that "anything near 650 MB is truncated" predates chunklist verification and
+  applies to Monterey-era images; a verified 843 MB Sequoia download is correct.
 - A **recovery** image downloads the OS from Apple during install, so the guest needs working DHCP
   and internet. A **full installer** (~14 GB) carries the payload and doesn't.
 - The recovery installer downloads the OS at install time and needs working DHCP + internet in the
@@ -363,13 +358,13 @@ Create via the Proxmox web UI with these settings:
 
 Then add the recovery image as a second CD/disk (`ide0`) after creation.
 
-**[from comments]** The "Pre-Enroll keys" tickbox is the #1 reported failure in the entire comment
-section. If it is ticked, you land in the **UEFI shell** instead of the OpenCore picker. The fix
-readers confirmed repeatedly: *delete* the EFI disk from the Hardware tab and re-add it with the box
-unticked — merely unticking it later does not fix an already-created EFI disk.
+⚠️ The **"Pre-Enroll keys"** tickbox is the single most common cause of a failed setup. If it is
+ticked you land in the **UEFI shell** instead of the OpenCore picker, and unticking it afterwards
+does **not** fix an already-created EFI disk — you must *delete* the EFI disk from the Hardware tab
+and re-add it with the box unticked.
 
-**[from comments]** Non-power-of-two core counts hang at the Apple logo. If you want 6 cores, set
-**3 sockets × 2 cores**; macOS accepts odd socket counts but not odd core counts.
+Non-power-of-two core counts hang at the Apple logo. If you want 6 cores, set **3 sockets × 2
+cores** — macOS accepts odd socket counts but not odd core counts.
 
 ---
 
@@ -377,8 +372,8 @@ unticked — merely unticking it later does not fix an already-created EFI disk.
 
 SSH into Proxmox and edit `/etc/pve/qemu-server/YOUR-VM-ID.conf` directly with nano/vim.
 
-**[from comments]** Do this over SSH, not through the web UI — UI edits can silently revert the
-`args` line and the `cache=unsafe` changes.
+Do this over SSH, not through the web UI — UI edits can silently revert the `args` line and the
+drive settings.
 
 ### 7a. Add the `args` line
 
@@ -390,21 +385,22 @@ args: -device isa-applesmc,osk="ourhardworkbythesewordsguardedpleasedontsteal(c)
 
 The `osk=` value is the OSK from §4 — the same on every Mac, so copy it exactly as written. It is
 **case-sensitive** and exactly **64 characters** between the quotes. One wrong character gives you a
-hang at the Apple logo or an `AppleKeyStore` boot loop, with no error that points back to the OSK —
-the single biggest time sink in the article's comment threads.
+hang at the Apple logo or an `AppleKeyStore` boot loop, with no error message pointing back to the
+OSK — which makes it one of the hardest failures here to diagnose.
 
 The USB half is the part that changed: `-device usb-kbd,bus=ehci.0,port=2` becomes
 `-device qemu-xhci -device usb-kbd -device usb-tablet`, because QEMU 10 dropped the `ehci.0` bus.
 The CPU half is a single model that works on both Intel and AMD hosts, since it spoofs
 `vendor=GenuineIntel` either way.
 
-**[PVE 9]** Skip `-cpu host`. The article recommends it for Intel hosts, but modern OpenCore-for-QEMU
-projects advise against passthrough CPU types — a real host model leaks CPUID details macOS doesn't
-expect, and it's a common cause of one-core-only boots. Name an explicit model instead.
+**Prefer an explicit CPU model over `-cpu host`.** A passthrough CPU type leaks CPUID details macOS
+doesn't expect and is a common cause of one-core-only boots. The exception is a host old enough that
+macOS knows it natively — on Ivy Bridge and similar, `-cpu host` is fine and avoids advertising
+features the host doesn't actually have.
 
 ---
 
-**Proxmox 7 / 8** — the article's original form still works there:
+**Proxmox 7 / 8** — the older form still works there:
 
 ```
 args: -device isa-applesmc,osk="ourhardworkbythesewordsguardedpleasedontsteal(c)AppleComputerInc" -smbios type=2 -device usb-kbd,bus=ehci.0,port=2 -global nec-usb-xhci.msi=off -global ICH9-LPC.acpi-pci-hotplug-with-bridge-support=off
@@ -424,9 +420,8 @@ AMD host:
 -cpu Penryn,kvm=on,vendor=GenuineIntel,+kvm_pv_unhalt,+kvm_pv_eoi,+hypervisor,+invtsc,+pcid,+ssse3,+sse4.2,+popcnt,+avx,+avx2,+aes,+fma,+fma4,+bmi1,+bmi2,+xsave,+xsaveopt,+rdrand,check
 ```
 
-**[from comments]** AMD notes: if you see clock drift, drop `+invtsc`. If you hang at the Apple logo
-on a Ryzen APU, disable **ErP Mode** and **Global C-state Control** in the host BIOS and try adding
-`+tsc_adjust`. Penryn lacks AVX2 — if a guest app needs it, some readers switched the model to
+**AMD notes:** if you see clock drift, drop `+invtsc`. If you hang at the Apple logo on a Ryzen APU,
+disable **ErP Mode** and **Global C-state Control** in the host BIOS and try adding `+tsc_adjust`. Penryn lacks AVX2 — if a guest app needs it, some readers switched the model to
 `Haswell`.
 
 **[issue #15]** `+hypervisor` is not optional. The macOS kernel grants itself large timing tolerances
@@ -443,9 +438,9 @@ args: -device isa-applesmc,osk="ourhardworkbythesewordsguardedpleasedontsteal(c)
 
 …plus `cpu: Cascadelake-Server` in the config. Worth trying before you start bisecting flags.
 
-**[from comments]** There must be exactly **one** `args:` line in the file. A reader spent hours on a
-missing virtio disk that turned out to be a second `args:` line (added for VNC) silently overwriting
-the first.
+⚠️ There must be exactly **one** `args:` line in the file. A second one — easily introduced when
+following separate instructions for VNC or passthrough — silently overwrites the first, and the
+symptom is usually a missing disk rather than an error.
 
 ### 7b. Convert the CD-ROM lines to disks
 
@@ -454,9 +449,8 @@ storage whose ISO folder is `/var/lib/vz/template/iso/`. If your images live on 
 substitute its name — `pvesm status --content iso` lists the ones that can hold ISOs, and a wrong
 name here fails with *"storage 'x' does not exist"*.
 
-**[changed]** The article says to *replace* `media=cdrom` with `cache=unsafe`. That is only half
-right, and on Proxmox **8.4 and newer it makes the VM refuse to start.** You must set
-`media=disk` **explicitly** and add `cache=unsafe`:
+Both images must be attached as **disks**, not CD-ROMs — they are raw hard-disk images, not ISO
+9660. Set `media=disk` **explicitly** and add `cache=unsafe`:
 
 ```
 ide0: local:iso/Sequoia-recovery.img,media=disk,cache=unsafe,size=3G
@@ -512,8 +506,8 @@ the file — and because `qm set` only validates the option being changed, this 
 qm set VMID --boot order=ide2
 ```
 
-**The article's advice fails differently.** If you delete `media=cdrom` and add nothing, the config
-saves fine but the VM won't start:
+**Removing `media=cdrom` without replacing it fails differently.** The config saves fine, but the VM
+won't start:
 
 ```
 ide0: explicit media parameter is required for iso images
@@ -594,8 +588,8 @@ qm set VMID --machine "$(kvm -machine help | grep -oE 'pc-q35-[0-9]+\.[0-9]+' | 
 5. After the final reboot, pick your main disk to boot into macOS.
 6. Complete Setup Assistant, but **do not sign into an Apple ID yet** (§9).
 
-**[from comments]** Timing sanity: "About 2 hours 17 minutes remaining" is normal — Apple's servers
-are slow and 3 hours total is not unusual. Check host network traffic to confirm it's still
+Timing sanity: "About 2 hours 17 minutes remaining" is normal — Apple's servers are slow and 3
+hours total is not unusual. Check host network traffic to confirm it's still
 downloading rather than hung. A progress bar that hangs at 12–15% has often been fixed by keeping the
 console session active (move the mouse; don't let anything sleep).
 
@@ -614,8 +608,8 @@ Then copy source → target:
 sudo dd if=/dev/disk1s1 of=/dev/disk0s1
 ```
 
-⚠️ `disk1s1` / `disk0s1` are examples straight from the article. **Verify your own identifiers in the
-`diskutil list` output first** — `dd` with the arguments backwards overwrites OpenCore's EFI onto your
+⚠️ `disk1s1` / `disk0s1` are **examples only**. **Verify your own identifiers in the `diskutil
+list` output first** — `dd` with the arguments backwards overwrites OpenCore's EFI onto your
 macOS disk's EFI in the wrong direction and you lose your bootloader.
 
 Shut down, remove both `ide0` and `ide2` from the Hardware tab, set `virtio0` first in the boot order,
@@ -632,7 +626,7 @@ or get flagged. Generate your own with [GenSMBIOS](https://github.com/corpnewt/G
 `iMac20,1` and write `SystemSerialNumber`, `SystemUUID`, `MLB`, and `ROM` into
 `PlatformInfo/Generic` in `config.plist`.
 
-**[from comments]** For iMessage/FaceTime you also need `en0` marked as built-in — follow
+For iMessage/FaceTime you also need `en0` marked as built-in — follow
 [Dortania's iServices guide](https://dortania.github.io/OpenCore-Post-Install/universal/iservices.html).
 If iCloud toggles spin without saving, sign fully out of iCloud and back in.
 
@@ -685,7 +679,7 @@ Consolidated from all six comment pages. Left column is the symptom you'll actua
 | Symptom | Fix |
 |---|---|
 | **VM won't start: `Bus 'ehci.0' not found`** | **[PVE 9]** QEMU 10 dropped that bus. Replace `-device usb-kbd,bus=ehci.0,port=2` with `-device qemu-xhci -device usb-kbd -device usb-tablet` (§7a) |
-| **VM won't start: `ide0: explicit media parameter is required for iso images`** | **[PVE 8.4+]** You followed the article and deleted `media=cdrom` outright. Set `media=disk` explicitly — see §7b |
+| **VM won't start: `ide0: explicit media parameter is required for iso images`** | **[PVE 8.4+]** `media` is undefined — `media=cdrom` was removed without adding `media=disk`. See §7b |
 | **`qm set` fails: `explicit 'media=cdrom' is required for iso images`** | Expected — the API refuses `media=disk` on ISO storage. Write the `ide` lines directly into `/etc/pve/qemu-server/VMID.conf`, then set the boot order with `qm set` (§7b) |
 | OpenCore/installer still not offered as a boot entry | Both IDE lines need **`media=disk,cache=unsafe`**, not one or the other (§7b) |
 | `media=disk` rejected on a future Proxmox upgrade | It's an unsupported workaround. Fallback: import the image as a real VM disk — `qm importdisk VMID /var/lib/vz/template/iso/Sequoia-recovery.img local-lvm` — then attach it and set the boot order. Sidesteps ISO-storage handling entirely |
@@ -738,11 +732,11 @@ Host kernel args for AMD IOMMU:
 GRUB_CMDLINE_LINUX_DEFAULT="quiet amd_iommu=on"
 ```
 
-**[from comments]** Confirmed-working data point: X570 + RX 580, CSM **enabled** in host BIOS, 40.9 FPS
-in Unigine Valley on Monterey. The same reader found Ventura hung at PCI enumeration.
+Confirmed-working data point: X570 + RX 580, CSM **enabled** in host BIOS, 40.9 FPS in Unigine
+Valley on Monterey. The same setup hung at PCI enumeration under Ventura.
 
-**[from comments]** NVMe passthrough is hit-and-miss — a WD SN750 1 TB was invisible to Disk Utility
-while an SN750 SE 512 GB and a Samsung 970 Pro worked with no config changes. Emulated fallback:
+NVMe passthrough is hit-and-miss — a WD SN750 1 TB was invisible to Disk Utility while an SN750 SE
+512 GB and a Samsung 970 Pro worked with no config changes. Emulated fallback:
 `virtio0: file=/dev/nvme1n1` (slower).
 
 ---
@@ -866,23 +860,30 @@ Then rebuild the image and re-copy it to the host.
 
 ---
 
-## Sources
+## Credits and further reading
 
-- Nicholas Sherlock, [Installing macOS 12 "Monterey" on Proxmox 7](https://www.nicksherlock.com/2021/10/installing-macos-12-monterey-on-proxmox-7/), plus comment pages 1–6
-- [PR #84](https://github.com/thenickdude/KVM-Opencore/pull/84) — OpenCore 1.0.5 / Sequoia / Tahoe (merged into our master)
-- [PR #79](https://github.com/thenickdude/KVM-Opencore/pull/79) — original `hv_vmm_present` patch discovery
-- [kholia/OSX-KVM](https://github.com/kholia/OSX-KVM) — `fetch-macOS-v2.py`
-- [Dortania OpenCore Post-Install](https://dortania.github.io/OpenCore-Post-Install/)
-- [Mac OS 15 Sequoia on Proxmox 9.0.3](https://forum.proxmox.com/threads/mac-os-15-sequoia-on-proxmox-9-0-3.169742/) — Proxmox forum thread; source of the working PVE 9 `args` line
-- [8.4: "Fake" IDE drives from ISO images no longer supported?](https://forum.proxmox.com/threads/8-4-fake-ide-drives-from-iso-images-no-longer-supported.164967/) — the `media=disk` change, including Proxmox staff's view that it's a workaround
-- [`proxmox/qemu-server`](https://github.com/proxmox/qemu-server) — `src/PVE/API2/Qemu.pm` (the API-side `media=cdrom` requirement), `src/PVE/QemuServer.pm` and `src/PVE/QemuServer/Blockdev.pm` (the looser VM-start check), and `src/test/cfg2cmd/ide-no-media-error.conf`
-- [LongQT-sea/OpenCore-ISO](https://github.com/LongQT-sea/OpenCore-ISO) — actively maintained alternative OpenCore image covering Mac OS X 10.4 through macOS 26, with per-host-CPU guidance. Worth a look if this repo's image gives you trouble on PVE 9
-- Repo issues referenced: [#15](https://github.com/thenickdude/KVM-Opencore/issues/15),
-  [#35](https://github.com/thenickdude/KVM-Opencore/issues/35),
-  [#37](https://github.com/thenickdude/KVM-Opencore/issues/37),
-  [#43](https://github.com/thenickdude/KVM-Opencore/issues/43),
-  [#76](https://github.com/thenickdude/KVM-Opencore/issues/76),
-  [#80](https://github.com/thenickdude/KVM-Opencore/issues/80),
-  [#82](https://github.com/thenickdude/KVM-Opencore/issues/82),
-  [#83](https://github.com/thenickdude/KVM-Opencore/issues/83),
-  [#85](https://github.com/thenickdude/KVM-Opencore/issues/85)
+**Nothing here is required reading** — this guide is self-contained. These are the sources the work
+draws on, listed for attribution and for anyone wanting to go deeper.
+
+**Foundational work this builds on**
+
+- Nicholas Sherlock's [macOS on Proxmox guides](https://www.nicksherlock.com/2021/10/installing-macos-12-monterey-on-proxmox-7/) and their reader comment threads, the origin of the `isa-applesmc` / `q35` / `cache=unsafe` approach and much of the troubleshooting here
+- [thenickdude/KVM-Opencore](https://github.com/thenickdude/KVM-Opencore) — the upstream image this repo forks, itself forked from [Leoyzen's](https://github.com/leoyzen/KVM-Opencore)
+- [Acidanthera](https://github.com/acidanthera) — OpenCore, Lilu, WhateverGreen, AppleALC, VirtualSMC, CryptexFixup, RestrictEvents
+- [OpenCore Legacy Patcher](https://github.com/dortania/OpenCore-Legacy-Patcher) — source of the non-AVX2 findings: the `CryptexFixup` gating, `revpatch=f16c` for Ivy Bridge, and confirmation that root patches address hardware drivers rather than the dyld cache
+- [Dortania OpenCore Post-Install](https://dortania.github.io/OpenCore-Post-Install/) — iServices and SMBIOS guidance
+
+**Specific sources cited in the text**
+
+- [PR #84](https://github.com/thenickdude/KVM-Opencore/pull/84) — OpenCore 1.0.5, Sequoia and Tahoe support (merged into this fork)
+- [PR #79](https://github.com/thenickdude/KVM-Opencore/pull/79) — the original `hv_vmm_present` patch discovery
+- [kholia/OSX-KVM](https://github.com/kholia/OSX-KVM) — `fetch-macOS-v2.py`, used in §3
+- [Mac OS 15 Sequoia on Proxmox 9.0.3](https://forum.proxmox.com/threads/mac-os-15-sequoia-on-proxmox-9-0-3.169742/) — source of the working PVE 9 `args` line
+- [8.4: "Fake" IDE drives from ISO images no longer supported?](https://forum.proxmox.com/threads/8-4-fake-ide-drives-from-iso-images-no-longer-supported.164967/) — the `media=disk` change, including Proxmox staff's view that it is a workaround
+- [`proxmox/qemu-server`](https://github.com/proxmox/qemu-server) — `src/PVE/API2/Qemu.pm` (API-side `media=cdrom` requirement), `src/PVE/QemuServer.pm` and `src/PVE/QemuServer/Blockdev.pm` (the looser VM-start check), and `src/test/cfg2cmd/ide-no-media-error.conf`
+- [.NET for iOS — Xcode requirement](https://learn.microsoft.com/en-us/dotnet/ios/troubleshooting/xcode-requirement) and [dotnet/macios releases](https://github.com/dotnet/macios/releases) — the .NET ↔ Xcode ↔ macOS version chain
+- Upstream issues drawn on: [#15](https://github.com/thenickdude/KVM-Opencore/issues/15) (TSC panics), [#35](https://github.com/thenickdude/KVM-Opencore/issues/35) / [#76](https://github.com/thenickdude/KVM-Opencore/issues/76) (pre-Catalina `Cpuid1Data`), [#37](https://github.com/thenickdude/KVM-Opencore/issues/37) (AMD single-core boots), [#43](https://github.com/thenickdude/KVM-Opencore/issues/43) (safe mode, non-AVX2 graphics), [#80](https://github.com/thenickdude/KVM-Opencore/issues/80) (picker defaults), [#82](https://github.com/thenickdude/KVM-Opencore/issues/82) (VMHide), [#83](https://github.com/thenickdude/KVM-Opencore/issues/83) (mounting config.plist on LVM-thin), [#85](https://github.com/thenickdude/KVM-Opencore/issues/85) (Tahoe freeze)
+
+**Alternatives**
+
+- [LongQT-sea/OpenCore-ISO](https://github.com/LongQT-sea/OpenCore-ISO) — an actively maintained alternative image covering Mac OS X 10.4 through macOS 26, with per-host-CPU guidance. Worth trying if this image gives you trouble
