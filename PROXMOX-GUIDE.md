@@ -41,13 +41,30 @@ Verified against [EFI/OC/config.plist](EFI/OC/config.plist) at master after the 
 | Resolution | `1920x1080@32` | Change under `UEFI/Output/Resolution` |
 | Kexts | Lilu, WhateverGreen, AppleALC, CryptexFixup, MCEReporterDisabler, USBPorts, AGPMInjector, Brcm* + BlueToolFixup | VirtualSMC is present but **disabled** — QEMU's `isa-applesmc` provides the SMC instead |
 | Drivers | OpenRuntime, OpenHfsPlus, OpenCanopy, OpenPartitionDxe, ResetNvramEntry, ToggleSipEntry | You get "Reset NVRAM" and "Toggle SIP" entries in the boot picker |
-| `Misc/Boot/Timeout` | `5` **(local change)** | Autoboots after 5 s instead of waiting at the picker forever |
-| `Misc/Security/AllowSetDefault` | `true` **(local change)** | Ctrl+Enter at the picker sets your default boot entry |
 
-The last two rows are **our local change, not upstream** — applied from
-[issue #80](https://github.com/thenickdude/KVM-Opencore/issues/80), where upstream's `Timeout 0` +
-`AllowSetDefault false` meant the VM sat at the boot picker forever with no way to pick a default. To
-go back to stock, set them to `0` and `<false/>`.
+### Local changes — every deviation from upstream
+
+Eight changes, all in [EFI/OC/config.plist](EFI/OC/config.plist). Upstream has none of them.
+
+| # | Change | From → To | Why |
+|---|---|---|---|
+| 1 | `Misc/Boot/Timeout` | `0` → `5` | Upstream never autoboots; the picker waits forever ([issue #80](https://github.com/thenickdude/KVM-Opencore/issues/80)) |
+| 2 | `Misc/Security/AllowSetDefault` | `false` → `true` | Without it **Ctrl+Enter cannot set a default entry**, so the timeout lands on the useless `EFI` volume |
+| 3 | `CryptexFixup` `MinKernel` | `22.1.0` → **`20.0.0`** | **The critical one.** It must load on the *source* OS to patch the installer during an in-place upgrade. At 22.1.0 it never loaded on Monterey, so non-AVX2 upgrades silently installed the wrong cryptex and panicked |
+| 4 | `CryptexFixup` `MaxKernel` | `23.99.99` → *(none)* | Capped at Sonoma, so it was skipped on Sequoia and newer |
+| 5 | `RestrictEvents.kext` | *absent* → added, `MinKernel 20.4.0` | OCLP injects it on every Ivy Bridge machine |
+| 6 | `NVRAM` `revpatch` | *absent* → `f16c` **in both `Add` and `Delete`** | Fixes CoreGraphics on Ivy Bridge under 13.3+. **`Add` alone does nothing** — it only writes variables that don't already exist, so `Delete` is required to force a rewrite each boot |
+| 7 | Penryn `cpuid_set_cpufamily` patch | `MaxKernel 23.99.99` → *(none)* | Nothing spoofed the CPU family on Sequoia; the older variant stops at 20.3.99 |
+| 8 | *Force FileVault on Broken Seal* patch | `MaxKernel 23.99.99` → *(none)* | The non-AVX2 accommodation, capped below where it was needed |
+
+Changes 3–8 exist because upstream's config was written for the Ventura/Sonoma era. PR #84 added
+Sequoia support on top without extending what was already there.
+
+To verify `revpatch` reached the kext — note plain `nvram -p` does **not** list vendor-GUID variables:
+
+```bash
+nvram 4D1FDA02-38C7-4A6A-9CC6-4BCCA8B30102:revpatch
+```
 
 ⚠️ The SMBIOS serial in the repo (`C02C5YYPPN5T`) is shared by everyone using this image. **Generate
 your own before signing into an Apple ID** — see §9.
@@ -59,95 +76,94 @@ we merged from PR #84 do the same job at the kernel level. Adding both is redund
 
 ---
 
-## ⚠️ Pre-Haswell hosts: read before you start
+## ⚠️ Non-AVX2 hosts (Ivy Bridge and older): read before you start
 
-If your host CPU lacks **AVX2** — Intel Ivy Bridge or older, AMD pre-Excavator — you **cannot boot
-the installer for macOS Ventura, Sonoma, Sequoia or Tahoe.** Not a config problem; not fixable from
-OpenCore. Verified on a Xeon E5-2670 v2 with genuine, chunklist-verified Apple recovery media:
+macOS Ventura and later ship **only `x86_64h` dyld shared caches**, which require AVX2. On a
+pre-Haswell CPU this has one visible consequence and one workable path.
 
-```
-panic(cpu 0 caller 0x…): initproc failed to start -- exit reason namespace 2 subcode 0x4
-```
-
-preceded by:
-
-```
-shared_region: … [1(launchd)] check_np(…) vm_shared_region_start_address() failed
-AMFI: '/System/Library/dyld/dyld_shared_cache_x86_64' is adhoc signed.
-```
-
-Ventura and later dropped the non-AVX2 dyld shared caches, so `launchd` — pid 1 — dies before
-userspace exists. The kernel boots fine, which makes this look like a config fault. It isn't.
-
-**CryptexFixup does not fix this.** It forces the Rosetta cryptex into the system being *installed*;
-it cannot change the installer environment you are booting, whose dyld cache is already baked in.
-Injecting it is still correct for the installed OS — just don't expect it to get you past this.
-
-### Upgrading past Ventura on non-AVX2: what actually goes wrong
-
-Sequoia can be *installed* by upgrading in place from Monterey — that part works, and the resulting
-system boots far enough to graft its cryptex. It then panics anyway:
-
-```
-apfs_log_op_with_proc: … grafting volume …x86_64SystemCryptex, requested by: launchd
-Library not loaded: /usr/lib/libSystem.B.dylib
-  Reason: tried '/System/Volumes/Preboot/Cryptexes/OS/usr/lib/libSystem.B.dylib' (no such file),
-          … (no such file, no dyld cache)
-panic(…): initproc failed to start -- exit reason namespace 6 subcode 0x1
-```
-
-macOS grafts the **stock Intel cryptex**, whose dyld cache is `x86_64h`. A pre-Haswell CPU cannot
-execute it, dyld rejects the cache, and since modern macOS ships no loose dylibs, `launchd` dies.
-
-**Root cause: CryptexFixup has to run on the *source* OS, not the target.** It hooks
-`cs_validate_page` and rewrites the string `cryptex-system-x86_64` to `cryptex-system-arm64e` inside
-the installer's `ramrod` binary (embedded in `UpdateBrainLibrary`) as it is paged in — that is what
-makes the installer fetch the Rosetta cryptex. Its own source gates this on Big Sur: *"Support Big
-Sur and newer for in-place Install macOS.app usage"*.
-
-This config gated the kext at `MinKernel 22.1.0`, so upgrading **from Monterey (Darwin 21) never
-loaded it at all**. `ramrod` was never patched and the installer requested the Intel cryptex exactly
-as designed. OpenCore Legacy Patcher gates CryptexFixup at `MinKernel 20.0.0`; this repo now matches.
-
-It also explains why `-crypt_force_avx` changed nothing — that argument is only consulted when
-`cpuHasAvx2` is **true**, which on a pre-Haswell host it never is.
-
-### Verified: Sonoma works on non-AVX2
-
-With CryptexFixup at `MinKernel 20.0.0`, **macOS Sonoma 14.8.9 installs and boots on a Xeon
-E5-2670 v2** (Ivy Bridge, no AVX2) as a Proxmox 9 guest — upgraded in place from Monterey with
-`startosinstall`. No OCLP, no root patching, no SMBIOS changes. Desktop, Dock and SSH all work.
-
-Two things are needed beyond stock upstream:
-
-1. **CryptexFixup at `MinKernel 20.0.0`**, so it loads on the *source* OS and can patch the installer.
-2. **RestrictEvents with `revpatch=f16c`**, which OCLP applies to every Ivy Bridge machine on 13.3+.
-   Note `revpatch` must also be listed under **`NVRAM/Delete`** — `NVRAM/Add` only writes a variable
-   that doesn't already exist, so without the Delete entry it silently never reaches the kext.
-   Verify with `nvram 4D1FDA02-38C7-4A6A-9CC6-4BCCA8B30102:revpatch`; plain `nvram -p` does not list
-   vendor-GUID variables.
-
-**Sequoia is therefore plausible but still untested.** CryptexFixup declares support through Tahoe in
-its own `PluginConfiguration`, and OCLP's root patches restore *hardware drivers* — graphics,
-wireless, backlight — not the dyld cache, so they are not what makes non-AVX2 userspace work. The one
-real risk is that CryptexFixup's patch is a literal byte-string match against the installer's `ramrod`
-binary; if Apple changed that string, it fails silently.
-
-Check your host before spending an evening on it:
+Check your host first:
 
 ```bash
 grep -o avx2 /proc/cpuinfo | head -1
 ```
 
-Nothing printed means no AVX2. Your options:
+Nothing printed means no AVX2, and this section applies to you.
 
-| Goal | Route |
+### What does not work: booting Ventura+ installer media
+
+Booting a Ventura, Sonoma, Sequoia or Tahoe **installer or recovery image** panics before userspace
+exists:
+
+```
+shared_region: … [1(launchd)] check_np(…) vm_shared_region_start_address() failed
+panic(…): initproc failed to start -- exit reason namespace 2 subcode 0x4
+```
+
+Verified with genuine, chunklist-verified Apple recovery media. The kernel boots fine, which makes it
+look like a config fault — it isn't. The installer environment's dyld cache is baked in, and nothing
+injected at boot can change it. **Do not chase this.** Use the upgrade path instead.
+
+### What works: install Monterey, then upgrade in place
+
+Monterey is the newest release whose installer boots natively on pre-Haswell. From there,
+`startosinstall` upgrades in place, and **CryptexFixup can intervene because it runs on the source
+OS**.
+
+| Target | Status |
 |---|---|
-| Simplest working VM | **Install Monterey** — the newest release whose installer boots natively on pre-Haswell |
-| Newest usable macOS | **Install Monterey, then upgrade in place with `startosinstall`.** The installer *app* works where installer *media* cannot. Sonoma 14.8.9 is verified; Sequoia is untested but plausible |
-| macOS 15 / Sequoia or newer | **Unverified.** The earlier failure was our own `MinKernel` gating, not a hardware limit — see above. Retest with CryptexFixup at `MinKernel 20.0.0` before assuming it can't work |
+| Monterey 12.x | ✅ installs natively |
+| Ventura 13.x / **Sonoma 14.x** | ✅ **verified** — Sonoma 14.8.9 upgraded in place on a Xeon E5-2670 v2 under Proxmox 9 |
+| Sequoia 15.x | ⚠️ untested, but plausible — see below |
+| Tahoe 26.x | ⚠️ untested |
 
-Everything else in this guide applies unchanged; only your choice of macOS version does.
+No OCLP, no root patching, no SMBIOS changes are needed. OCLP's root patches restore *hardware
+drivers* — graphics, wireless, backlight — and explicitly skip the dyld cache above Catalina, so they
+are not the mechanism behind non-AVX2 support. **CryptexFixup alone is.** In a VM with paravirtualized
+graphics and virtio networking, essentially every OCLP patchset is a no-op.
+
+### How CryptexFixup works, and the trap
+
+It hooks `cs_validate_page` and, when the installer's `ramrod` binary (embedded in
+`UpdateBrainLibrary`) is paged in, rewrites the string `cryptex-system-x86_64` to
+`cryptex-system-arm64e`. That is the entire trick: it changes which cryptex the installer requests
+from Apple.
+
+Because that happens **while the installer runs on the source OS**, the kext must be loaded *there*.
+Upstream's `MinKernel 22.1.0` meant it never loaded on Monterey, so `ramrod` was never patched, macOS
+grafted the stock Intel cryptex, and the upgraded system panicked:
+
+```
+apfs_log_op_with_proc: … grafting volume …x86_64SystemCryptex, requested by: launchd
+Library not loaded: /usr/lib/libSystem.B.dylib  … (no such file, no dyld cache)
+panic(…): initproc failed to start -- exit reason namespace 6 subcode 0x1
+```
+
+**Requirements for a non-AVX2 upgrade** (all already applied in this repo — see §0):
+
+1. `CryptexFixup` at `MinKernel 20.0.0` with no `MaxKernel`
+2. `RestrictEvents` with `revpatch=f16c`, listed in **both** `NVRAM/Add` and `NVRAM/Delete`
+3. The Penryn and broken-seal kernel patches with their `MaxKernel` ceilings removed
+
+Confirm the kext is live on the source OS *before* starting an upgrade:
+
+```bash
+kextstat | grep -i cryptex
+```
+
+`-crypt_force_avx` is **not** a workaround — that argument is only consulted when `cpuHasAvx2` is
+true, which on this hardware it never is.
+
+The one remaining risk for Sequoia and Tahoe: CryptexFixup's patch is a literal byte-string match. If
+Apple changed that string in a newer installer, it fails silently, and the symptom is identical.
+Watch the grafted cryptex name on first boot — `arm64e` means it worked.
+
+### Living with it
+
+- **No GPU acceleration, ever, on Ventura+.** AMD Polaris/Vega/Navi drivers require AVX2 from Ventura
+  onward. Apple's paravirtualized stack still works, which is why there is a display at all.
+- **Userspace runs the baseline Rosetta dyld cache** — unoptimized code. This is the performance
+  floor and it applies to Xcode too.
+- Suits a headless build host driven over SSH far better than an interactive workstation.
 
 ---
 
@@ -650,7 +666,8 @@ Consolidated from all six comment pages. Left column is the symptom you'll actua
 | Boots to **UEFI shell**, no OpenCore picker | Delete the EFI disk, re-add with "pre-enroll keys" unticked. Failing that: F2 → Boot Maintenance → Boot Options → delete stale entries, add `EFI/OC/OpenCore.efi`, make it default |
 | `Bd5Dxe: failed to load Boot0003` | Same as above |
 | OpenCore entry missing / "cannot find QEMU DVD-ROM" | You skipped §7b — the IDE lines need `media=disk,cache=unsafe` |
-| **`initproc failed to start`, exit reason namespace 2** | Host CPU lacks AVX2 and you're booting Ventura+ installer media. See the pre-Haswell section above — install Monterey and upgrade in place |
+| **`initproc failed to start`, namespace 2** | Host lacks AVX2 and you're booting Ventura+ installer *media*. Not fixable — install Monterey and upgrade in place (see the non-AVX2 section) |
+| **`initproc failed to start`, namespace 6**, log shows `grafting …x86_64SystemCryptex` | CryptexFixup didn't patch the installer. Check it was loaded on the **source** OS: `kextstat \| grep -i cryptex`. Needs `MinKernel 20.0.0` |
 | **Stuck at Apple logo**, no progress bar | In order of likelihood: OSK not exactly 64 chars; core count not a power of two; CPU missing SSE 4.2; remove hugepages from the host kernel cmdline |
 | Boot loop with `AppleKeyStore operation failed` | Wrong OSK |
 | Kernel panic, `TSC warp between CPUs` | Known on Sandy Bridge-era hosts; see OSX-KVM issue #15. `CpuTscSync.kext` was reported to help, especially for wake-from-sleep panics |
