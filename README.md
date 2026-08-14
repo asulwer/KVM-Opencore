@@ -18,6 +18,9 @@ What differs from upstream today:
 | Change | Why |
 |---|---|
 | Merged [PR #84](https://github.com/thenickdude/KVM-Opencore/pull/84) | OpenCore **1.0.5**, SMBIOS `iMac20,1`, `ScanPolicy 0`, and the two `hv_vmm_present` kernel patches that make Apple Services work on **Sequoia and Tahoe**. Open upstream since October 2025 |
+| **`CryptexFixup` at `MinKernel 20.0.0`** (was `22.1.0`, capped at `23.99.99`) | The fix that makes non-AVX2 upgrades work. CryptexFixup patches the *installer* while it runs on the **source** OS, so gating it to Ventura meant it never loaded on Monterey — upgrades silently installed the wrong cryptex and panicked in `launchd` |
+| **`RestrictEvents` + `revpatch=f16c`** | OCLP applies this to every Ivy Bridge machine on macOS 13.3+ to stop CoreGraphics crashing. `revpatch` is in both `NVRAM/Add` **and** `NVRAM/Delete` — `Add` alone never writes it |
+| **Penryn and broken-seal kernel patches uncapped** | Both stopped at `MaxKernel 23.99.99`, leaving Sequoia with no CPU-family spoof and no non-AVX2 accommodation |
 | `Misc/Boot/Timeout=5`, `Misc/Security/AllowSetDefault=true` | Upstream ships `0`/`false`, so the picker waits forever and Ctrl+Enter can't set a default — the VM never autoboots. Requested in upstream [issue #80](https://github.com/thenickdude/KVM-Opencore/issues/80) |
 | [`PROXMOX-GUIDE.md`](PROXMOX-GUIDE.md) | Full install guide for Proxmox 9, including two changes that stop the VM booting on current Proxmox (see below) |
 | [`build-image-nomac.sh`](build-image-nomac.sh) | Builds the image **without a Mac**. Upstream's Makefile needs `hdiutil` and `xcodebuild` |
@@ -25,6 +28,16 @@ What differs from upstream today:
 
 Upstream's newest tagged release is **v21 (March 2024)** — it predates Sequoia and does *not* contain
 the kernel patches above. Build from this repo's master instead.
+
+### Verified on non-AVX2 hardware
+
+**macOS Sonoma 14.8.9 runs on a Xeon E5-2670 v2** (Ivy Bridge, no AVX2) as a Proxmox 9 guest —
+installed as Monterey, then upgraded in place. No OpenCore Legacy Patcher, no root patching, no
+SMBIOS spoofing. Ventura and later cannot boot from installer *media* on such CPUs; the in-place
+upgrade path is what works, and the `CryptexFixup` gating fix above is what makes it work.
+
+Sequoia and Tahoe are untested but no longer believed blocked — see the non-AVX2 section of the
+guide.
 
 ## Quick start
 
