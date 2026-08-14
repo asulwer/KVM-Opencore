@@ -29,6 +29,21 @@ What differs from upstream today:
 Upstream's newest tagged release is **v21 (March 2024)** — it predates Sequoia and does *not* contain
 the kernel patches above. Build from this repo's master instead.
 
+### macOS version support
+
+| macOS | Darwin | AVX2 host | Non-AVX2 host |
+|---|---|---|---|
+| Catalina 10.15.6+ – Big Sur 11 | 19–20 | supported by config | native install |
+| **Monterey 12** | 21 | supported by config | ✅ verified |
+| Ventura 13 | 22 | supported by config | upgrade in place only |
+| **Sonoma 14** | 23 | supported by config | ✅ verified (14.8.9) |
+| Sequoia 15 | 24 | reported working by the PR #84 author | untested |
+| Tahoe 26 | 25 | reported working by the PR #84 author | untested |
+
+*Verified* means installed and booted to a working desktop on a Xeon E5-2670 v2 under Proxmox 9.
+Catalina 10.15.6 is the floor (the `iMac20,1` SMBIOS doesn't exist before it), and SSE 4.2 is the
+hard CPU requirement throughout.
+
 ### Verified on non-AVX2 hardware
 
 **macOS Sonoma 14.8.9 runs on a Xeon E5-2670 v2** (Ivy Bridge, no AVX2) as a Proxmox 9 guest —

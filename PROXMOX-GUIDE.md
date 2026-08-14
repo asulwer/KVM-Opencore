@@ -76,6 +76,34 @@ we merged from PR #84 do the same job at the kernel level. Adding both is redund
 
 ---
 
+## macOS version support
+
+Darwin numbers matter because every `MinKernel`/`MaxKernel` in `config.plist` is expressed in them.
+
+| macOS | Darwin | AVX2 host | Non-AVX2 host (Ivy Bridge and older) |
+|---|---|---|---|
+| Catalina 10.15.6+ | 19 | supported by config | native install |
+| Big Sur 11 | 20 | supported by config | native install |
+| **Monterey 12** | **21** | supported by config | ✅ **verified** — native install |
+| Ventura 13 | 22 | supported by config | upgrade in place only |
+| **Sonoma 14** | **23** | supported by config | ✅ **verified** — 14.8.9 by in-place upgrade |
+| Sequoia 15 | 24 | reported working by the PR #84 author | ⚠️ untested |
+| Tahoe 26 | 25 | reported working by the PR #84 author | ⚠️ untested |
+
+**Verified** means installed and booted to a working desktop during the writing of this guide, on a
+Xeon E5-2670 v2 under Proxmox 9 / QEMU 11. Everything else is what the configuration supports, not
+something that has been run.
+
+Two floors worth knowing:
+
+- **Catalina 10.15.6** is the practical minimum — the `iMac20,1` SMBIOS doesn't exist before it.
+- **SSE 4.2** is the hard CPU floor for any version.
+
+Older releases (Sierra, Yosemite) need `Kernel/Emulate/Cpuid1Data` and `Cpuid1Mask` removed or they
+reboot with no log — see §10.
+
+---
+
 ## ⚠️ Non-AVX2 hosts (Ivy Bridge and older): read before you start
 
 macOS Ventura and later ship **only `x86_64h` dyld shared caches**, which require AVX2. On a
@@ -109,11 +137,12 @@ Monterey is the newest release whose installer boots natively on pre-Haswell. Fr
 `startosinstall` upgrades in place, and **CryptexFixup can intervene because it runs on the source
 OS**.
 
-| Target | Status |
+| Target | Status on non-AVX2 |
 |---|---|
-| Monterey 12.x | ✅ installs natively |
-| Ventura 13.x / **Sonoma 14.x** | ✅ **verified** — Sonoma 14.8.9 upgraded in place on a Xeon E5-2670 v2 under Proxmox 9 |
-| Sequoia 15.x | ⚠️ untested, but plausible — see below |
+| Monterey 12.x | ✅ **verified** — installs natively from Apple recovery media |
+| Ventura 13.x | ⚠️ untested here, but inside every supported range |
+| **Sonoma 14.x** | ✅ **verified** — 14.8.9 upgraded in place on a Xeon E5-2670 v2 under Proxmox 9 |
+| Sequoia 15.x | ⚠️ untested — see the byte-string caveat below |
 | Tahoe 26.x | ⚠️ untested |
 
 No OCLP, no root patching, no SMBIOS changes are needed. OCLP's root patches restore *hardware
