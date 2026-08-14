@@ -38,7 +38,7 @@ the kernel patches above. Build from this repo's master instead.
 | Ventura 13 | 22 | supported by config | upgrade in place only |
 | **Sonoma 14** | 23 | supported by config | ✅ verified (14.8.9) |
 | **Sequoia 15** | 24 | reported working by the PR #84 author | ✅ verified (15.7.9) |
-| Tahoe 26 | 25 | reported working by the PR #84 author | untested |
+| **Tahoe 26** | 25 | reported working by the PR #84 author | ✅ verified (26.6.1) |
 
 *Verified* means installed and booted to a working desktop on a Xeon E5-2670 v2 under Proxmox 9.
 Catalina 10.15.6 is the floor (the `iMac20,1` SMBIOS doesn't exist before it), and SSE 4.2 is the
@@ -46,16 +46,17 @@ hard CPU requirement throughout.
 
 ### Verified on non-AVX2 hardware
 
-**macOS Sequoia 15.7.9 runs on a Xeon E5-2670 v2** (Ivy Bridge, no AVX2, dual socket) as a Proxmox 9
-guest — installed as Monterey, then upgraded in place to Sonoma 14.8.9 and on to Sequoia. **No
-OpenCore Legacy Patcher, no root patching, no SMBIOS spoofing.**
+**macOS Tahoe 26.6.1 runs on a Xeon E5-2670 v2** (Ivy Bridge, no AVX2, dual socket) as a Proxmox 9
+guest — installed as Monterey, then upgraded in place through Sonoma 14.8.9 and Sequoia 15.7.9 to
+Tahoe. **No OpenCore Legacy Patcher, no root patching, no SMBIOS spoofing.** That is the current
+macOS release running on a CPU Apple dropped three generations ago.
 
 Ventura and later cannot boot from installer *media* on pre-Haswell CPUs — the in-place upgrade path
 is what works, and the `CryptexFixup` gating fix above is what makes it work. Verified by the
 presence of `dyld_shared_cache_arm64e` and Rosetta's `aot_shared_cache.*` under
 `/System/Volumes/Preboot/Cryptexes/OS/`, which only the Apple Silicon cryptex provides.
 
-Tahoe is untested, but nothing known blocks it.
+Every release from Catalina to Tahoe is therefore reachable on pre-Haswell hardware.
 
 ## Quick start
 

@@ -85,7 +85,7 @@ Darwin numbers matter because every `MinKernel`/`MaxKernel` in `config.plist` is
 | Ventura 13 | 22 | supported by config | upgrade in place only |
 | **Sonoma 14** | **23** | supported by config | ✅ **verified** — 14.8.9 by in-place upgrade |
 | **Sequoia 15** | **24** | reported working by the PR #84 author | ✅ **verified** — 15.7.9 by in-place upgrade |
-| Tahoe 26 | 25 | reported working by the PR #84 author | ⚠️ untested |
+| **Tahoe 26** | **25** | reported working by the PR #84 author | ✅ **verified** — 26.6.1 by in-place upgrade |
 
 **Verified** means installed and booted to a working desktop during the writing of this guide, on a
 Xeon E5-2670 v2 under Proxmox 9 / QEMU 11. Everything else is what the configuration supports, not
@@ -140,11 +140,13 @@ OS**.
 | Ventura 13.x | ⚠️ untested here, but inside every supported range |
 | **Sonoma 14.x** | ✅ **verified** — 14.8.9 upgraded in place |
 | **Sequoia 15.x** | ✅ **verified** — 15.7.9 upgraded in place from Sonoma |
-| Tahoe 26.x | ⚠️ untested, but nothing known blocks it |
+| **Tahoe 26.x** | ✅ **verified** — 26.6.1 upgraded in place from Sequoia |
 
-Both verified results are from the same machine: a **Xeon E5-2670 v2** (Ivy Bridge, no AVX2, dual
+Every verified result is from the same machine: a **Xeon E5-2670 v2** (Ivy Bridge, no AVX2, dual
 socket) under **Proxmox 9 / QEMU 11**, installed as Monterey and upgraded in place with
-`startosinstall` — Monterey → Sonoma → Sequoia.
+`startosinstall` at each step — **Monterey → Sonoma → Sequoia → Tahoe**. So a pre-Haswell CPU runs
+every macOS release up to and including the current one, three generations after Apple dropped
+support for it.
 
 No OCLP, no root patching, no SMBIOS changes are needed. OCLP's root patches restore *hardware
 drivers* — graphics, wireless, backlight — and explicitly skip the dyld cache above Catalina, so they
@@ -184,7 +186,9 @@ kextstat | grep -i cryptex
 true, which on this hardware it never is.
 
 CryptexFixup's patch is a literal byte-string match, so a future installer could in principle change
-that string and break silently. As of **Sequoia 15.7.9 (24G830) it still matches.**
+that string and break silently. As of **Tahoe 26.6.1 (25G76) it still matches** — and Tahoe is the
+upper bound CryptexFixup declares in its own `PluginConfiguration`, so beyond it you would also need
+`-lilubetaall` (this repo already sets it).
 
 ### Confirming the Rosetta cryptex is in place
 
