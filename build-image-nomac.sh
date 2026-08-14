@@ -28,6 +28,7 @@ APPLEALC_VER=1.9.5
 VIRTUALSMC_VER=1.3.7
 BRCMPATCHRAM_VER=2.7.1
 CRYPTEXFIXUP_VER=1.0.5
+RESTRICTEVENTS_VER=1.1.6
 OCBINARYDATA_SHA=af09b0bf763363ec9f4ecdbbe2f0adeb970948d8
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -122,6 +123,11 @@ done
 
 fetch "https://github.com/acidanthera/CryptexFixup/releases/download/$CRYPTEXFIXUP_VER/CryptexFixup-$CRYPTEXFIXUP_VER-RELEASE.zip" "$DL/cryptex.zip"
 copy_kext "$(unpack cryptex "$DL/cryptex.zip")" CryptexFixup.kext
+
+# RestrictEvents: revpatch=f16c fixes CoreGraphics crashing on Ivy Bridge under macOS 13.3+,
+# which OCLP applies for every Ivy Bridge machine. The NVRAM value lives in config.plist.
+fetch "https://github.com/acidanthera/RestrictEvents/releases/download/$RESTRICTEVENTS_VER/RestrictEvents-$RESTRICTEVENTS_VER-RELEASE.zip" "$DL/restrictevents.zip"
+copy_kext "$(unpack restrictevents "$DL/restrictevents.zip")" RestrictEvents.kext
 
 # Codeless kexts that live in this repo (no binaries to build).
 for k in AGPMInjector.kext MCEReporterDisabler.kext USBPorts.kext; do
