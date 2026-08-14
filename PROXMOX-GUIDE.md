@@ -83,7 +83,7 @@ userspace exists. The kernel boots fine, which makes this look like a config fau
 it cannot change the installer environment you are booting, whose dyld cache is already baked in.
 Injecting it is still correct for the installed OS — just don't expect it to get you past this.
 
-### Tested ceiling for non-AVX2: Sonoma
+### Upgrading past Ventura on non-AVX2: what actually goes wrong
 
 Sequoia can be *installed* by upgrading in place from Monterey — that part works, and the resulting
 system boots far enough to graft its cryptex. It then panics anyway:
@@ -99,17 +99,24 @@ panic(…): initproc failed to start -- exit reason namespace 6 subcode 0x1
 macOS grafts the **stock Intel cryptex**, whose dyld cache is `x86_64h`. A pre-Haswell CPU cannot
 execute it, dyld rejects the cache, and since modern macOS ships no loose dylibs, `launchd` dies.
 
-This was reproduced on a Xeon E5-2670 v2 with CryptexFixup 1.0.5 **uncapped past its 23.99.99
-ceiling**, both the Penryn and broken-seal patches extended to Sequoia, and `-crypt_force_avx` set.
-The grafted cryptex name never changed — CryptexFixup simply does not engage on Darwin 24.
+**Root cause: CryptexFixup has to run on the *source* OS, not the target.** It hooks
+`cs_validate_page` and rewrites the string `cryptex-system-x86_64` to `cryptex-system-arm64e` inside
+the installer's `ramrod` binary (embedded in `UpdateBrainLibrary`) as it is paged in — that is what
+makes the installer fetch the Rosetta cryptex. Its own source gates this on Big Sur: *"Support Big
+Sur and newer for in-place Install macOS.app usage"*.
 
-**So the practical ceiling on a non-AVX2 host is Sonoma (14.x)**, which is what CryptexFixup, the
-broken-seal patch and this config were all written and tested against. Ventura and Sonoma sit inside
-every supported range; Sequoia sits outside all of them.
+This config gated the kext at `MinKernel 22.1.0`, so upgrading **from Monterey (Darwin 21) never
+loaded it at all**. `ramrod` was never patched and the installer requested the Intel cryptex exactly
+as designed. OpenCore Legacy Patcher gates CryptexFixup at `MinKernel 20.0.0`; this repo now matches.
 
-If you need macOS 15 or newer — for example Xcode 16.4, which requires 15.4+ — you need an
-AVX2-capable host. Intel Haswell or newer, AMD Excavator/Ryzen or newer. No OpenCore configuration
-substitutes for it.
+It also explains why `-crypt_force_avx` changed nothing — that argument is only consulted when
+`cpuHasAvx2` is **true**, which on a pre-Haswell host it never is.
+
+⚠️ **The earlier conclusion that Sequoia is impossible on non-AVX2 hardware was based on this
+misconfiguration and should not be trusted.** CryptexFixup declares support through Tahoe in its own
+`PluginConfiguration`, and OCLP's root patches restore *hardware drivers* — graphics, wireless,
+backlight — not the dyld cache, so they are not what makes non-AVX2 userspace work. Whether Sequoia
+succeeds once CryptexFixup actually loads during the upgrade is **untested**.
 
 Check your host before spending an evening on it:
 
@@ -123,7 +130,7 @@ Nothing printed means no AVX2. Your options:
 |---|---|
 | Simplest working VM | **Install Monterey** — the newest release whose installer boots natively on pre-Haswell |
 | Newest usable macOS | **Install Monterey, then upgrade in place to Ventura or Sonoma.** The installer *app* works where installer *media* cannot, and CryptexFixup covers 22.1.0–23.99.99 |
-| macOS 15 / Sequoia or newer | **Not achievable on this hardware.** See the tested ceiling above — you need an AVX2-capable host |
+| macOS 15 / Sequoia or newer | **Unverified.** The earlier failure was our own `MinKernel` gating, not a hardware limit — see above. Retest with CryptexFixup at `MinKernel 20.0.0` before assuming it can't work |
 
 Everything else in this guide applies unchanged; only your choice of macOS version does.
 
