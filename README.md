@@ -77,8 +77,8 @@ Both are covered in detail in the guide.
 **`build-image-nomac.sh` (no Mac required).** Every submodule pinned at master is an upstream release
 tag, and Acidanthera publishes prebuilt binaries for each, so nothing needs compiling. The script
 downloads those exact versions — OpenCore 1.0.5, Lilu 1.7.1, WhateverGreen 1.7.0, AppleALC 1.9.5,
-VirtualSMC 1.3.7, BrcmPatchRAM 2.7.1, CryptexFixup 1.0.5 — assembles the same EFI tree, and writes a
-GPT/FAT32 image with `mtools`. No root, no loop devices.
+VirtualSMC 1.3.7, BrcmPatchRAM 2.7.1, CryptexFixup 1.0.5, RestrictEvents 1.1.6 — assembles the same
+EFI tree, and writes a GPT/FAT32 image with `mtools`. No root, no loop devices.
 
 **`make dist` (Mac required).** Upstream's build system, which compiles every kext from source with
 `xcodebuild` and packages with `hdiutil`. Needs `git submodule update --init` first. Use this only if
