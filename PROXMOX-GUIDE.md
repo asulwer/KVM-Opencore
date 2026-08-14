@@ -84,7 +84,7 @@ Darwin numbers matter because every `MinKernel`/`MaxKernel` in `config.plist` is
 | **Monterey 12** | **21** | supported by config | ✅ **verified** — native install |
 | Ventura 13 | 22 | supported by config | upgrade in place only |
 | **Sonoma 14** | **23** | supported by config | ✅ **verified** — 14.8.9 by in-place upgrade |
-| Sequoia 15 | 24 | reported working by the PR #84 author | ⚠️ untested |
+| **Sequoia 15** | **24** | reported working by the PR #84 author | ✅ **verified** — 15.7.9 by in-place upgrade |
 | Tahoe 26 | 25 | reported working by the PR #84 author | ⚠️ untested |
 
 **Verified** means installed and booted to a working desktop during the writing of this guide, on a
@@ -138,9 +138,13 @@ OS**.
 |---|---|
 | Monterey 12.x | ✅ **verified** — installs natively from Apple recovery media |
 | Ventura 13.x | ⚠️ untested here, but inside every supported range |
-| **Sonoma 14.x** | ✅ **verified** — 14.8.9 upgraded in place on a Xeon E5-2670 v2 under Proxmox 9 |
-| Sequoia 15.x | ⚠️ untested — see the byte-string caveat below |
-| Tahoe 26.x | ⚠️ untested |
+| **Sonoma 14.x** | ✅ **verified** — 14.8.9 upgraded in place |
+| **Sequoia 15.x** | ✅ **verified** — 15.7.9 upgraded in place from Sonoma |
+| Tahoe 26.x | ⚠️ untested, but nothing known blocks it |
+
+Both verified results are from the same machine: a **Xeon E5-2670 v2** (Ivy Bridge, no AVX2, dual
+socket) under **Proxmox 9 / QEMU 11**, installed as Monterey and upgraded in place with
+`startosinstall` — Monterey → Sonoma → Sequoia.
 
 No OCLP, no root patching, no SMBIOS changes are needed. OCLP's root patches restore *hardware
 drivers* — graphics, wireless, backlight — and explicitly skip the dyld cache above Catalina, so they
@@ -179,9 +183,26 @@ kextstat | grep -i cryptex
 `-crypt_force_avx` is **not** a workaround — that argument is only consulted when `cpuHasAvx2` is
 true, which on this hardware it never is.
 
-The one remaining risk for Sequoia and Tahoe: CryptexFixup's patch is a literal byte-string match. If
-Apple changed that string in a newer installer, it fails silently, and the symptom is identical.
-Watch the grafted cryptex name on first boot — `arm64e` means it worked.
+CryptexFixup's patch is a literal byte-string match, so a future installer could in principle change
+that string and break silently. As of **Sequoia 15.7.9 (24G830) it still matches.**
+
+### Confirming the Rosetta cryptex is in place
+
+After an upgrade, this is the check that proves it worked:
+
+```bash
+ls /System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld/
+```
+
+You want to see **`dyld_shared_cache_arm64e`** and a set of **`aot_shared_cache.*`** files. Those come
+from the Apple Silicon (Rosetta) cryptex and cannot appear if the stock Intel cryptex was installed.
+The baseline `dyld_shared_cache_x86_64` alongside them is what a pre-Haswell CPU actually executes.
+
+Also confirm both kexts are live:
+
+```bash
+kextstat | grep -iE "cryptex|restrict"
+```
 
 ### Living with it
 
