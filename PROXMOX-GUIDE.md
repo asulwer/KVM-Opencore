@@ -112,11 +112,26 @@ as designed. OpenCore Legacy Patcher gates CryptexFixup at `MinKernel 20.0.0`; t
 It also explains why `-crypt_force_avx` changed nothing — that argument is only consulted when
 `cpuHasAvx2` is **true**, which on a pre-Haswell host it never is.
 
-⚠️ **The earlier conclusion that Sequoia is impossible on non-AVX2 hardware was based on this
-misconfiguration and should not be trusted.** CryptexFixup declares support through Tahoe in its own
-`PluginConfiguration`, and OCLP's root patches restore *hardware drivers* — graphics, wireless,
-backlight — not the dyld cache, so they are not what makes non-AVX2 userspace work. Whether Sequoia
-succeeds once CryptexFixup actually loads during the upgrade is **untested**.
+### Verified: Sonoma works on non-AVX2
+
+With CryptexFixup at `MinKernel 20.0.0`, **macOS Sonoma 14.8.9 installs and boots on a Xeon
+E5-2670 v2** (Ivy Bridge, no AVX2) as a Proxmox 9 guest — upgraded in place from Monterey with
+`startosinstall`. No OCLP, no root patching, no SMBIOS changes. Desktop, Dock and SSH all work.
+
+Two things are needed beyond stock upstream:
+
+1. **CryptexFixup at `MinKernel 20.0.0`**, so it loads on the *source* OS and can patch the installer.
+2. **RestrictEvents with `revpatch=f16c`**, which OCLP applies to every Ivy Bridge machine on 13.3+.
+   Note `revpatch` must also be listed under **`NVRAM/Delete`** — `NVRAM/Add` only writes a variable
+   that doesn't already exist, so without the Delete entry it silently never reaches the kext.
+   Verify with `nvram 4D1FDA02-38C7-4A6A-9CC6-4BCCA8B30102:revpatch`; plain `nvram -p` does not list
+   vendor-GUID variables.
+
+**Sequoia is therefore plausible but still untested.** CryptexFixup declares support through Tahoe in
+its own `PluginConfiguration`, and OCLP's root patches restore *hardware drivers* — graphics,
+wireless, backlight — not the dyld cache, so they are not what makes non-AVX2 userspace work. The one
+real risk is that CryptexFixup's patch is a literal byte-string match against the installer's `ramrod`
+binary; if Apple changed that string, it fails silently.
 
 Check your host before spending an evening on it:
 
@@ -129,7 +144,7 @@ Nothing printed means no AVX2. Your options:
 | Goal | Route |
 |---|---|
 | Simplest working VM | **Install Monterey** — the newest release whose installer boots natively on pre-Haswell |
-| Newest usable macOS | **Install Monterey, then upgrade in place to Ventura or Sonoma.** The installer *app* works where installer *media* cannot, and CryptexFixup covers 22.1.0–23.99.99 |
+| Newest usable macOS | **Install Monterey, then upgrade in place with `startosinstall`.** The installer *app* works where installer *media* cannot. Sonoma 14.8.9 is verified; Sequoia is untested but plausible |
 | macOS 15 / Sequoia or newer | **Unverified.** The earlier failure was our own `MinKernel` gating, not a hardware limit — see above. Retest with CryptexFixup at `MinKernel 20.0.0` before assuming it can't work |
 
 Everything else in this guide applies unchanged; only your choice of macOS version does.
