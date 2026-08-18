@@ -885,6 +885,52 @@ Then rebuild the image and re-copy it to the host.
 
 ---
 
+## Verified use case: iOS build host for Visual Studio
+
+This VM was built to serve as a `remotebuild` Mac for Visual Studio on Windows, and that works. The
+full chain, all verified:
+
+| Layer | Version |
+|---|---|
+| Host | Proxmox 9 / QEMU 11, Xeon E5-2670 v2 (Ivy Bridge, **no AVX2**) |
+| Guest | macOS Tahoe 26.6.1 |
+| Xcode | 26.6 (**Universal** build), iOS SDK 26.5, simulator runtime 26.5 |
+| Windows | Visual Studio 2026, .NET SDK 10.0.302, iOS workload `26.5.10301` |
+
+A .NET 10 iOS app builds and runs in the simulator over the SSH pairing.
+
+### Things that will trip you up
+
+- **Download the Universal Xcode, not the Apple silicon build.** Apple ships both. The wrong one
+  installs fine and never launches. Verify with
+  `lipo -archs /Applications/Xcode.app/Contents/MacOS/Xcode` — you want `x86_64 arm64`.
+- **Simulator runtimes are a separate download** since Xcode 15, and `xcodebuild -runFirstLaunch`
+  does not fetch them. Without one, builds fail with `actool exited with code 1` and
+  `No available simulator runtimes ... supportedRuntimes=[]`. Fix with `xcodebuild -downloadPlatform iOS`.
+- **Microsoft's docs still require Mono** on the build host, separately from Xcode and from the .NET
+  SDK that Visual Studio provisions itself. It installs to a framework bundle, so `mono --version`
+  may need `/Library/Frameworks/Mono.framework/Versions/Current/bin` on `PATH`.
+- **Remote Login needs more than being switched on.** Enable *Allow full disk access for remote
+  users* and allow *All users*, or Visual Studio's automatic provisioning fails.
+- **Pin the .NET workload.** A later `dotnet workload update` will pull a build wanting a newer
+  Xcode and break the pairing. If Visual Studio installed the workloads, manage them through the VS
+  Installer rather than `dotnet workload install --version`, which fails against a VS-managed SDK.
+
+### No Apple ID is needed in the VM
+
+Simulator builds require no signing at all. For device and distribution builds, import a `.p12`
+certificate and a provisioning profile directly and use **manual** signing — automatic signing is
+what demands an interactive Apple account. Uploads are best done with an App Store Connect API key.
+Keeping the VM account-free also makes the shared SMBIOS serial irrelevant.
+
+### This has an expiry date
+
+**Xcode 26 is the last version that supports Intel Macs** — Xcode 27 is Apple silicon only,
+regardless of macOS version. This build host stays viable for as long as your .NET workload pairs
+with an Xcode 26.x release.
+
+---
+
 ## Credits and further reading
 
 **Nothing here is required reading** — this guide is self-contained. These are the sources the work

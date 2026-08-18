@@ -58,6 +58,14 @@ presence of `dyld_shared_cache_arm64e` and Rosetta's `aot_shared_cache.*` under
 
 Every release from Catalina to Tahoe is therefore reachable on pre-Haswell hardware.
 
+### Verified as an iOS build host
+
+Visual Studio 2026 on Windows pairs to this VM over SSH and builds and runs a **.NET 10** iOS app in
+the simulator — Xcode 26.6 (Universal), iOS SDK 26.5, workload `26.5.10301`. See the guide for the
+gotchas: the Universal-vs-Apple-silicon Xcode download, simulator runtimes being a separate
+`xcodebuild -downloadPlatform iOS` fetch, and the fact that **Xcode 26 is the last Intel-compatible
+release**, which bounds how long this stays viable.
+
 ## Quick start
 
 Build the image on any Linux box — the Proxmox host is the obvious choice, since that's where it has
